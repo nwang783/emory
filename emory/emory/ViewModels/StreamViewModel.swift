@@ -40,10 +40,16 @@ final class StreamViewModel {
     // Snapshot
     var lastSnapshot: UIImage?
 
+    // Bridge server
+    var bridgeStatus: BridgeServerService.ConnectionStatus = .disconnected
+    var recognizedFaces: [FaceMatch] = []
+    var lastTranscript: String?
+
     // MARK: - Private
 
     private let service: MetaWearablesService
     private let micService = MicrophoneCaptureService()
+    let bridgeService = BridgeServerService()
     private var streamTasks: [Task<Void, Never>] = []
     private var fpsTimer: Timer?
     private var framesThisSecond: Int = 0
@@ -54,7 +60,15 @@ final class StreamViewModel {
         // Use real service for glasses, mock for testing
         self.service = service ?? RealMetaWearablesService()
         log("ViewModel initialized (real mode)")
+
+        // Forward mic audio to bridge server
+        micService.onAudioBuffer = { [weak self] buffer, sampleRate, channels in
+            self?.bridgeService.sendAudioChunk(buffer, sampleRate: sampleRate, channels: channels)
+        }
+
         subscribeToStreams()
+        subscribeToBridge()
+        connectBridgeIfConfigured()
     }
 
     // MARK: - Actions
@@ -73,6 +87,7 @@ final class StreamViewModel {
             do {
                 try await service.start()
                 log("Session started successfully")
+                self.bridgeService.sendSessionStart()
 
                 // Start iPhone mic capture alongside glasses video
                 do {
@@ -94,6 +109,7 @@ final class StreamViewModel {
         let service = self.service
 
         // Stop mic capture
+        bridgeService.sendSessionEnd()
         micService.stop()
         isMicCapturing = false
         audioLevel = 0.0
@@ -147,14 +163,17 @@ final class StreamViewModel {
         isPlayingRecording = true
         micService.playRecording()
 
-        // Poll for playback completion
-        Task {
-            while micService.isPlaying {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+        // Poll for playback completion — track the task so cleanup can cancel it
+        let task = Task {
+            while !Task.isCancelled && micService.isPlaying {
+                try? await Task.sleep(nanoseconds: 200_000_000)
             }
-            self.isPlayingRecording = false
-            self.log("Playback finished")
+            if !Task.isCancelled {
+                self.isPlayingRecording = false
+                self.log("Playback finished")
+            }
         }
+        streamTasks.append(task)
     }
 
     func stopPlayback() {
@@ -198,7 +217,7 @@ final class StreamViewModel {
             }
         }
 
-        // Video frames
+        // Video frames — also forward to bridge server
         let frameTask = Task {
             for await frame in service.videoFrameStream {
                 self.currentFrame = frame
@@ -206,6 +225,9 @@ final class StreamViewModel {
                 self.framesThisSecond += 1
                 self.lastFrameTime = Date()
                 self.resolution = "\(Int(frame.size.width))x\(Int(frame.size.height))"
+
+                // Send to bridge server for face recognition
+                self.bridgeService.sendVideoFrame(frame, timestamp: Date())
             }
         }
 
@@ -248,17 +270,72 @@ final class StreamViewModel {
 
     func log(_ message: String, level: DebugEvent.Level = .info) {
         let event = DebugEvent(message, level: level)
-        debugEvents.insert(event, at: 0)
+        debugEvents.append(event)
 
-        // Keep last 200 events to avoid unbounded growth
-        if debugEvents.count > 200 {
-            debugEvents = Array(debugEvents.prefix(200))
+        // Keep last 100 events to avoid unbounded growth
+        if debugEvents.count > 100 {
+            debugEvents.removeFirst(debugEvents.count - 100)
         }
+    }
+
+    // MARK: - Bridge Server
+
+    func connectBridge(url: String) {
+        log("Connecting to bridge: \(url)")
+        bridgeService.connect(to: url)
+        bridgeStatus = bridgeService.connectionStatus
+    }
+
+    func disconnectBridge() {
+        bridgeService.disconnect()
+        bridgeStatus = .disconnected
+        log("Bridge disconnected")
+    }
+
+    private func connectBridgeIfConfigured() {
+        let url = AppSettings.shared.backendURL
+        if !url.isEmpty && url.hasPrefix("ws://") {
+            connectBridge(url: url)
+        }
+    }
+
+    private func subscribeToBridge() {
+        // Face recognition results
+        let faceTask = Task {
+            for await result in self.bridgeService.faceResultStream {
+                self.recognizedFaces = result.matches
+                if !result.matches.isEmpty {
+                    let names = result.matches.map { $0.name }.joined(separator: ", ")
+                    self.log("Recognized: \(names) (\(result.ms)ms)")
+                }
+            }
+        }
+
+        // Transcripts
+        let transcriptTask = Task {
+            for await transcript in self.bridgeService.transcriptStream {
+                self.lastTranscript = transcript.text
+                self.log("Transcript: \(transcript.text.prefix(60))...")
+            }
+        }
+
+        // Server status
+        let statusTask = Task {
+            for await status in self.bridgeService.statusStream {
+                self.log("Bridge: face=\(status.faceReady), people=\(status.peopleCount)")
+            }
+        }
+
+        streamTasks.append(contentsOf: [faceTask, transcriptTask, statusTask])
     }
 
     func cleanup() {
         streamTasks.forEach { $0.cancel() }
+        streamTasks.removeAll()
         fpsTimer?.invalidate()
+        fpsTimer = nil
         micService.stop()
+        bridgeService.disconnect()
     }
+
 }

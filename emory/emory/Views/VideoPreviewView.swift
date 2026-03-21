@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Video Preview View
 // Renders the latest camera frame from the glasses (or mock).
-// Shows resolution, timestamp, and FPS overlay.
+// Shows resolution and FPS as a compact badge overlay.
 
 struct VideoPreviewView: View {
     let frame: UIImage?
@@ -11,46 +11,46 @@ struct VideoPreviewView: View {
     let lastFrameTime: Date?
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack(alignment: .bottomTrailing) {
             // Frame display
             if let frame = frame {
                 Image(uiImage: frame)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .aspectRatio(contentMode: .fill)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.black)
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemGray6))
+                    .frame(height: 220)
                     .overlay(
                         VStack(spacing: 8) {
                             Image(systemName: "video.slash")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.gray)
+                                .font(.system(size: 36))
+                                .foregroundStyle(Color(.systemGray3))
                             Text("No Video Feed")
-                                .font(.caption)
-                                .foregroundStyle(.gray)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(.systemGray3))
                         }
                     )
             }
 
-            // Stats overlay
+            // Resolution + FPS badge
             if frame != nil {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(resolution)
-                    Text(String(format: "%.1f FPS", fps))
-                    if let time = lastFrameTime {
-                        Text(DateFormatter.debugFormatter.string(from: time))
-                    }
-                }
-                .font(.caption2.monospaced())
-                .foregroundStyle(.white)
-                .padding(8)
-                .background(.black.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .padding(8)
+                Text("\(resolution) \u{2022} \(String(format: "%.0ffps", fps))")
+                    .font(.system(size: 11, weight: .medium).monospaced())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(10)
             }
         }
-        .frame(maxHeight: 300)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(.systemGray2), lineWidth: 2.5)
+        )
         .contentShape(Rectangle())
     }
 }
