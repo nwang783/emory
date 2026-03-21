@@ -6,6 +6,11 @@ import { FrequentVisitors } from './FrequentVisitors'
 import { RecentEncounters } from './RecentEncounters'
 import { UnknownSightings } from './UnknownSightings'
 import type { AnalyticsPerson, AnalyticsEncounter, AnalyticsUnknown, FrequentVisitor } from '../types'
+import {
+  buildGraphEdgesToSelf,
+  formatGraphEdgeLabel,
+  type RelationshipEndpointRow,
+} from '@/shared/lib/graph-relationship-labels'
 
 const SEVEN_DAYS_MS = 7 * 86_400_000
 const THIRTY_DAYS_MS = 30 * 86_400_000
@@ -13,6 +18,7 @@ const THIRTY_DAYS_MS = 30 * 86_400_000
 function computeFrequentVisitors(
   encounters: AnalyticsEncounter[],
   people: AnalyticsPerson[],
+  graphLabelByPersonId: Record<string, string>,
 ): FrequentVisitor[] {
   const cutoff = Date.now() - THIRTY_DAYS_MS
   const recentEncounters = encounters.filter((e) => new Date(e.startedAt).getTime() > cutoff)
@@ -30,7 +36,7 @@ function computeFrequentVisitors(
       return {
         personId,
         name: person?.name ?? 'Unknown',
-        relationship: person?.relationship ?? null,
+        relationship: graphLabelByPersonId[personId] ?? null,
         encounterCount: count,
         lastSeen: person?.lastSeen ?? null,
       }
@@ -43,19 +49,28 @@ export function AnalyticsDashboard(): React.JSX.Element {
   const [people, setPeople] = useState<AnalyticsPerson[]>([])
   const [encounters, setEncounters] = useState<AnalyticsEncounter[]>([])
   const [unknowns, setUnknowns] = useState<AnalyticsUnknown[]>([])
+  const [graphLabelByPersonId, setGraphLabelByPersonId] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load(): Promise<void> {
       try {
-        const [p, e, u] = await Promise.all([
+        const [p, e, u, self, rels] = await Promise.all([
           window.emoryApi.db.people.findAll(),
           window.emoryApi.encounter.getRecent(1000),
           window.emoryApi.unknown.getAll(50),
+          window.emoryApi.db.people.getSelf(),
+          window.emoryApi.db.relationships.getAll(),
         ])
         setPeople(p as AnalyticsPerson[])
         setEncounters(e as AnalyticsEncounter[])
         setUnknowns(u as AnalyticsUnknown[])
+        const edges = buildGraphEdgesToSelf(self as { id: string } | null, rels as RelationshipEndpointRow[])
+        const labels: Record<string, string> = {}
+        for (const [pid, edge] of Object.entries(edges)) {
+          labels[pid] = formatGraphEdgeLabel(edge)
+        }
+        setGraphLabelByPersonId(labels)
       } catch {
         // Analytics load failed
       } finally {
@@ -76,8 +91,8 @@ export function AnalyticsDashboard(): React.JSX.Element {
   )
 
   const frequentVisitors = useMemo(
-    () => computeFrequentVisitors(encounters, people),
-    [encounters, people],
+    () => computeFrequentVisitors(encounters, people, graphLabelByPersonId),
+    [encounters, people, graphLabelByPersonId],
   )
 
   return (

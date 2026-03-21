@@ -106,7 +106,7 @@ apps/desktop/
 | Layer | Responsibility |
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
-| **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments. `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
+| **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments; extraction receives **graph** context via `RelationshipRepository.findBetween(self, target)` (not `people.relationship`). `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
 | **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
@@ -496,21 +496,22 @@ Subtitle under the product name: **Memory Assistant** (`Header.tsx`).
 | `StatusBar` | `shared/components/StatusBar.tsx` | Model status, FPS, face count, identified count, processing time, optional “identifying…”, optional auto-learn total, error line |
 | `SettingsPanel` | `modules/settings/components/SettingsPanel.tsx` | Card sections: Recognition (thresholds, auto-learn), Display (overlays), Performance (intervals), **Conversation recordings** (path + open folder), Data Retention (cleanup policies) |
 | `PeopleList` | `modules/people/components/PeopleList.tsx` | People list with scroll area, loading skeletons, empty state. Accepts `fullWidth` prop for grid vs sidebar layout |
-| `PersonCard` | `modules/people/components/PersonCard.tsx` | Person card: avatar initials, relationship badge, embedding count, relative last-seen time, edit/delete actions |
-| `EditPersonModal` | `modules/people/components/EditPersonModal.tsx` | Dialog for editing person basic info + rich profile (key facts, conversation starters, important dates, last topics). **This is me** toggle calls `db.people.setSelf` / `getSelf` (clears previous self). Uses `ScrollArea` for compact layout. Saves via `db.people.update` + `db.people.updateProfile` |
+| `PersonCard` | `modules/people/components/PersonCard.tsx` | Person card: avatar initials, **graph** relationship badge (edge from self → person via `people.store` `graphEdgeToSelfByPersonId`), embedding count, relative last-seen time, edit/delete actions |
+| `EditPersonModal` | `modules/people/components/EditPersonModal.tsx` | Dialog for **name** + rich profile (key facts, conversation starters, important dates, last topics). Relationship role / connection notes are edited in Connections (graph), not here. **This is me** toggle calls `db.people.setSelf` / `getSelf`. Saves via `db.people.update` (name only from this UI) + `db.people.updateProfile` |
 | `TagListEditor` | `modules/people/components/TagListEditor.tsx` | Reusable string-list editor with badge display, add/remove, Enter-to-add. Used by EditPersonModal for key facts, conversation starters, last topics |
 | `ImportantDateEditor` | `modules/people/components/ImportantDateEditor.tsx` | Editor for `{label, date}` pairs with side-by-side label + date inputs. Used by EditPersonModal for important dates |
-| `RegisterFaceModal` | `modules/people/components/RegisterFaceModal.tsx` | Registration dialog with name, relationship, notes fields. Inline shared-stream viewfinder (countdown capture) and photo upload; persists **128×128 JPEG** thumbnail + **quality** on the new embedding (schema V3) |
+| `RegisterFaceModal` | `modules/people/components/RegisterFaceModal.tsx` | Registration dialog with **name** only (relationships are added in Connections). Inline shared-stream viewfinder (countdown capture) and photo upload; persists **128×128 JPEG** thumbnail + **quality** on the new embedding (schema V3) |
 | `ErrorBoundary` | `shared/components/ErrorBoundary.tsx` | Class boundary around `MainContent`; shows fallback UI and logs `componentDidCatch` |
 | `WebcamFeed` | `modules/camera/components/WebcamFeed.tsx` | Camera view: `detectOnly` loop + `processFrame` on `identifyIntervalMs`, track smoothing, optional auto-learn (`extractEmbedding` → `autoLearn`), GraduationCap “learned” badge |
 | `WhoIsThisButton` | `modules/camera/components/WhoIsThisButton.tsx` | Voice announcement button for identified people via Web Speech API |
 | `ActivityFeed` | `modules/activity/components/ActivityFeed.tsx` | Scrollable log of recognition events, auto-learns, person additions/removals |
-| `AnalyticsDashboard` | `modules/analytics/components/AnalyticsDashboard.tsx` | Analytics overview: summary stat cards, frequent visitors (30d), recent encounters, unknown sightings. Loads data from `encounter.getRecent`, `db.people.findAll`, `unknown.getAll` |
+| `AnalyticsDashboard` | `modules/analytics/components/AnalyticsDashboard.tsx` | Analytics overview: summary stat cards, frequent visitors (30d), recent encounters, unknown sightings. Loads `encounter.getRecent`, `db.people.findAll`, `unknown.getAll`, plus **`getSelf` + `relationships.getAll`** to label frequent visitors from the graph |
 | `SummaryCards` | `modules/analytics/components/SummaryCards.tsx` | Four stat cards: total people, total encounters, last-7-day encounters, active unknowns |
 | `FrequentVisitors` | `modules/analytics/components/FrequentVisitors.tsx` | Ranked list of people by encounter count in the last 30 days with relationship badges |
 | `RecentEncounters` | `modules/analytics/components/RecentEncounters.tsx` | Last 20 encounters showing person name, confidence badge, timestamp, duration |
 | `UnknownSightings` | `modules/analytics/components/UnknownSightings.tsx` | Unknown sighting list with sighting count, status badge, first/last seen dates |
-| `ConnectionsGraph` | `modules/connections/components/ConnectionsGraph.tsx` | **Ego network** from **`db.people.getSelf`**: only you and people reachable via relationship edges; **you** stay pinned at the viewport centre (no global centre pull on others). Edge colours from relationship type; node hues from free-text relationship field. **Add Relationship** defaults to **You → other person** when self is set. Onboarding if people exist but self is unset. Graph edges also flow into **`person_memories`** via **`db.ipc`** (see Relationship Operations above), not inside this component |
+| `ConnectionsGraph` | `modules/connections/components/ConnectionsGraph.tsx` | **Ego network** from **`db.people.getSelf`**: only you and people reachable via relationship edges; **you** stay pinned at the viewport centre. Edge colours from **`relationships.relationship_type`**; node hues/subtitles from the **edge to self** (not `people.relationship`). **Double-click** a node opens **`GraphNodeEditDialog`**. **Add Relationship** defaults to **You → other person** when self is set. Onboarding if people exist but self is unset. Graph edges sync to **`person_memories`** via **`db.ipc`**. See [Connections graph](./connections-graph.md) |
+| `GraphNodeEditDialog` | `modules/connections/components/GraphNodeEditDialog.tsx` | Rename person; list incident edges — change type/notes (**Apply**), **Remove edge**, or **Delete person** (cascades in SQLite). Refreshes graph + `loadPeople()` after changes |
 | `EmbeddingGallery` | `modules/embeddings/components/EmbeddingGallery.tsx` | **Embeddings** tab: rows **grouped by person**, 128×128 face **thumbnails**, **source** badges (`photo_upload` / `live_capture` / `auto_learn`), per-row **delete** / **reassign**, **bulk selection** |
 
 ## State Management
@@ -528,10 +529,11 @@ Four Zustand stores provide reactive state without prop drilling:
 
 ### `people.store.ts`
 - `people` — list of registered people (`isSelf` from DB; **You** badge on `PersonCard`), plus optional profile fields: `keyFacts`, `conversationStarters`, `importantDates`, `lastTopics`
+- `graphEdgeToSelfByPersonId` — map of person id → `{ relationshipType, notes }` for the edge between **designated self** and that person (from `relationships.getAll` + `getSelf`), used by `PersonCard`, `WebcamFeed` / `WhoIsThisButton`, etc.
 - `ImportantDate` — `{ label: string, date: string }` type for date entries
 - `PersonProfile` — grouped type for profile fields (`keyFacts`, `conversationStarters`, `importantDates`, `lastTopics`)
-- `loadPeople()` — fetches all people from DB via IPC
-- `addPerson()` — creates person and adds to local state
+- `loadPeople()` — fetches people, self, and all relationships via IPC, then builds `graphEdgeToSelfByPersonId`
+- `addPerson()` — creates person (name only from UI) and adds to local state
 - `removePerson()` — deletes person and removes from local state
 
 ### `settings.store.ts`

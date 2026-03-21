@@ -69,6 +69,8 @@ Core person records.
 | `last_seen` | TEXT | |
 | `created_at` | TEXT | NOT NULL (ISO 8601) |
 
+**Product note (desktop):** The Connections graph is the place to set **how you know someone** — that data is stored on **`relationships`** (`relationship_type`, `notes`). The `people.relationship` and `people.notes` columns remain in the schema for backward compatibility and merges; the Camera / People UI does not edit them. See [Connections graph](../apps/connections-graph.md).
+
 #### `face_embeddings`
 Face embedding vectors (ArcFace output length **512** floats) stored as BLOBs (`Float32Array`).
 

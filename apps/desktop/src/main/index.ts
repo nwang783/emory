@@ -145,6 +145,7 @@ app.whenReady().then(async () => {
   const conversationProcessingService = new ConversationProcessingService(
     conversationRepo,
     peopleRepo,
+    relationshipRepo,
     deepgramService,
     memoryExtractionService,
   )
