@@ -1,4 +1,4 @@
-import { Camera, Users, Settings, Activity, BarChart3, Network, Images } from 'lucide-react'
+import { Camera, Users, Settings, Activity, BarChart3, Network, Images, Brain } from 'lucide-react'
 import { useSettingsStore, type SettingsState } from '@/shared/stores/settings.store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,7 @@ const TABS: TabDef[] = [
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'embeddings', label: 'Embeddings', icon: Images },
+  { id: 'memories', label: 'Memories', icon: Brain },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 

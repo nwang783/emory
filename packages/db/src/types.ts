@@ -367,3 +367,9 @@ export type CreatePersonMemoryInput = {
   confidence?: number | null
   sourceQuote?: string | null
 }
+
+export type UpdatePersonMemoryInput = {
+  memoryText?: string
+  memoryType?: MemoryType
+  memoryDate?: string
+}

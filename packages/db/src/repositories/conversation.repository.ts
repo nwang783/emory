@@ -10,6 +10,7 @@ import type {
   PersonMemory,
   PersonMemoryRow,
   TranscriptStatus,
+  UpdatePersonMemoryInput,
 } from '../types.js'
 
 function parseExtractionJson(value: string | null): MemoryExtractionResult | null {
@@ -360,5 +361,68 @@ export class ConversationRepository {
     `).all(...values, limit) as ConversationRecordingRow[]
 
     return rows.map(rowToConversationRecording)
+  }
+
+  updateMemory(id: string, input: UpdatePersonMemoryInput): PersonMemory | null {
+    const db = this.adapter.getDb()
+    const setClauses: string[] = []
+    const values: Array<string> = []
+
+    if (input.memoryText !== undefined) {
+      setClauses.push('memory_text = ?')
+      values.push(input.memoryText)
+    }
+
+    if (input.memoryType !== undefined) {
+      setClauses.push('memory_type = ?')
+      values.push(input.memoryType)
+    }
+
+    if (input.memoryDate !== undefined) {
+      setClauses.push('memory_date = ?')
+      values.push(input.memoryDate)
+    }
+
+    if (setClauses.length === 0) {
+      const row = db.prepare('SELECT * FROM person_memories WHERE id = ?').get(id) as
+        | PersonMemoryRow
+        | undefined
+      return row ? rowToPersonMemory(row) : null
+    }
+
+    const result = db
+      .prepare(`
+      UPDATE person_memories
+      SET ${setClauses.join(', ')}
+      WHERE id = ?
+    `)
+      .run(...values, id)
+
+    if (result.changes === 0) return null
+
+    const row = db.prepare('SELECT * FROM person_memories WHERE id = ?').get(id) as
+      | PersonMemoryRow
+      | undefined
+    return row ? rowToPersonMemory(row) : null
+  }
+
+  deleteMemory(id: string): boolean {
+    const db = this.adapter.getDb()
+    const result = db.prepare('DELETE FROM person_memories WHERE id = ?').run(id)
+    return result.changes > 0
+  }
+
+  getAllMemories(limit: number = 50): PersonMemory[] {
+    const db = this.adapter.getDb()
+    const rows = db
+      .prepare(`
+      SELECT *
+      FROM person_memories
+      ORDER BY memory_date DESC, created_at DESC
+      LIMIT ?
+    `)
+      .all(limit) as PersonMemoryRow[]
+
+    return rows.map(rowToPersonMemory)
   }
 }
