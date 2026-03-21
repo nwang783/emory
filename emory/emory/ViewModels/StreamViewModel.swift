@@ -29,6 +29,10 @@ final class StreamViewModel {
     var audioAvailable: Bool = false
     var audioLevel: Float = 0.0
     var isMicCapturing: Bool = false
+    var isRecording: Bool = false
+    var isPlayingRecording: Bool = false
+    var hasRecording: Bool = false
+    var recordingDuration: TimeInterval = 0
 
     // Debug
     var debugEvents: [DebugEvent] = []
@@ -101,6 +105,62 @@ final class StreamViewModel {
         }
         streamTasks.append(task)
         stopFPSTimer()
+    }
+
+    func startMicOnly() {
+        guard !isMicCapturing else { return }
+        log("Starting mic-only mode (no glasses)...")
+        do {
+            try micService.start()
+            isMicCapturing = true
+            log("Mic-only mode active")
+        } catch {
+            log("Mic start failed: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    func stopMicOnly() {
+        guard isMicCapturing else { return }
+        micService.stop()
+        isMicCapturing = false
+        audioLevel = 0.0
+        log("Mic-only mode stopped")
+    }
+
+    func startRecording() {
+        micService.startRecording()
+        isRecording = true
+        log("Recording started — hold to record")
+    }
+
+    func stopRecording() {
+        micService.stopRecording()
+        isRecording = false
+        hasRecording = micService.hasRecording
+        recordingDuration = micService.recordingDuration
+        log("Recording stopped (\(String(format: "%.1f", recordingDuration))s)")
+    }
+
+    func playRecording() {
+        guard hasRecording else { return }
+        log("Playing recording...")
+        isPlayingRecording = true
+        micService.playRecording()
+
+        // Poll for playback completion
+        Task {
+            while micService.isPlaying {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            self.isPlayingRecording = false
+            self.log("Playback finished")
+        }
+    }
+
+    func stopPlayback() {
+        micService.stopPlayback()
+        isPlayingRecording = false
+        log("Playback stopped")
     }
 
     func captureSnapshot() {

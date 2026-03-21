@@ -21,6 +21,18 @@ final class MicrophoneCaptureService {
     private var recentBuffers: [AVAudioPCMBuffer] = []
     private let maxBufferCount = 300 // ~10s at 1024 samples / 48kHz
 
+    // Recording state
+    private(set) var isRecording = false
+    private var recordingBuffers: [AVAudioPCMBuffer] = []
+    private var recordingFormat: AVAudioFormat?
+
+    // Playback state
+    private var audioPlayer: AVAudioPlayerNode?
+    private var playbackEngine: AVAudioEngine?
+    private(set) var isPlaying = false
+    private(set) var hasRecording = false
+    private(set) var recordingDuration: TimeInterval = 0
+
     // MARK: - Audio Level Stream
 
     lazy var audioLevelStream: AsyncStream<Float> = {
@@ -51,12 +63,15 @@ final class MicrophoneCaptureService {
             let level = Self.computeRMS(buffer)
             self?.levelContinuation?.yield(level)
 
-            // Store buffer for future backend use
+            // Store buffer for future backend use + recording
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.recentBuffers.append(buffer)
                 if self.recentBuffers.count > self.maxBufferCount {
                     self.recentBuffers.removeFirst()
+                }
+                if self.isRecording {
+                    self.recordingBuffers.append(buffer)
                 }
             }
         }
@@ -87,6 +102,102 @@ final class MicrophoneCaptureService {
 
     func getRecentBuffers() -> [AVAudioPCMBuffer] {
         return recentBuffers
+    }
+
+    // MARK: - Recording
+
+    func startRecording() {
+        guard isCapturing, !isRecording else { return }
+        recordingBuffers.removeAll()
+        recordingFormat = audioEngine.inputNode.outputFormat(forBus: 0)
+        isRecording = true
+        print("[Mic] Recording started")
+    }
+
+    func stopRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        hasRecording = !recordingBuffers.isEmpty
+
+        if let format = recordingFormat, !recordingBuffers.isEmpty {
+            let totalFrames = recordingBuffers.reduce(0) { $0 + Int($1.frameLength) }
+            recordingDuration = Double(totalFrames) / format.sampleRate
+        }
+
+        print("[Mic] Recording stopped: \(recordingBuffers.count) buffers, \(String(format: "%.1f", recordingDuration))s")
+    }
+
+    // MARK: - Playback
+
+    func playRecording() {
+        guard hasRecording, !isPlaying, !recordingBuffers.isEmpty, let format = recordingFormat else { return }
+
+        // Stop mic capture temporarily so we can hear playback
+        let wasCapturing = isCapturing
+        if wasCapturing {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+        }
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default)
+            try session.setActive(true)
+
+            let engine = AVAudioEngine()
+            let player = AVAudioPlayerNode()
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+
+            try engine.start()
+            self.playbackEngine = engine
+            self.audioPlayer = player
+            self.isPlaying = true
+
+            // Merge all buffers into one
+            let totalFrames = recordingBuffers.reduce(0) { $0 + Int($1.frameLength) }
+            guard let mergedBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)) else {
+                print("[Mic] Failed to create merged buffer")
+                return
+            }
+
+            var offset: AVAudioFrameCount = 0
+            for buf in recordingBuffers {
+                let frames = buf.frameLength
+                guard let srcData = buf.floatChannelData, let dstData = mergedBuffer.floatChannelData else { continue }
+                for ch in 0..<Int(format.channelCount) {
+                    dstData[ch].advanced(by: Int(offset)).update(from: srcData[ch], count: Int(frames))
+                }
+                offset += frames
+            }
+            mergedBuffer.frameLength = offset
+
+            player.scheduleBuffer(mergedBuffer) { [weak self] in
+                DispatchQueue.main.async {
+                    self?.stopPlayback()
+                    if wasCapturing {
+                        try? self?.start()
+                    }
+                }
+            }
+            player.play()
+            print("[Mic] Playback started")
+        } catch {
+            print("[Mic] Playback failed: \(error)")
+            isPlaying = false
+            if wasCapturing {
+                try? start()
+            }
+        }
+    }
+
+    func stopPlayback() {
+        audioPlayer?.stop()
+        playbackEngine?.stop()
+        audioPlayer = nil
+        playbackEngine = nil
+        isPlaying = false
+        print("[Mic] Playback stopped")
     }
 
     // MARK: - RMS Computation

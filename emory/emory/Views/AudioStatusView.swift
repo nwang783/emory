@@ -2,12 +2,21 @@ import SwiftUI
 
 // MARK: - Audio Status View
 // Shows microphone capture status with a live audio level meter.
-// Audio comes from the iPhone mic (not the glasses — the Meta DAT SDK has no audio API).
+// Includes hold-to-record button and playback controls.
 
 struct AudioStatusView: View {
     let isAvailable: Bool
     let isCapturing: Bool
-    let audioLevel: Float  // 0.0 to 1.0 normalized amplitude
+    let audioLevel: Float
+    var isRecording: Bool = false
+    var isPlaying: Bool = false
+    var hasRecording: Bool = false
+    var recordingDuration: TimeInterval = 0
+
+    var onRecordStart: (() -> Void)? = nil
+    var onRecordStop: (() -> Void)? = nil
+    var onPlay: (() -> Void)? = nil
+    var onStopPlayback: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 10) {
@@ -43,11 +52,9 @@ struct AudioStatusView: View {
             if isCapturing {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        // Background track
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color(.systemGray5))
 
-                        // Level bar with gradient
                         RoundedRectangle(cornerRadius: 4)
                             .fill(levelGradient)
                             .frame(width: max(4, CGFloat(audioLevel) * geometry.size.width))
@@ -55,6 +62,65 @@ struct AudioStatusView: View {
                     }
                 }
                 .frame(height: 8)
+            }
+
+            // Record + Playback controls
+            if isCapturing {
+                HStack(spacing: 12) {
+                    // Hold-to-record button
+                    Button {} label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(isRecording ? .red : .secondary)
+                                .frame(width: 10, height: 10)
+                                .overlay(
+                                    Circle()
+                                        .stroke(.white, lineWidth: 1)
+                                )
+                            Text(isRecording ? "Recording..." : "Hold to Record")
+                                .font(.caption.bold())
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(isRecording ? Color.red.opacity(0.2) : Color(.tertiarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in
+                                if !isRecording {
+                                    onRecordStart?()
+                                }
+                            }
+                            .onEnded { _ in
+                                if isRecording {
+                                    onRecordStop?()
+                                }
+                            }
+                    )
+
+                    // Play button
+                    if hasRecording {
+                        Button {
+                            if isPlaying {
+                                onStopPlayback?()
+                            } else {
+                                onPlay?()
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                                    .font(.caption)
+                                Text(isPlaying ? "Stop" : String(format: "Play %.1fs", recordingDuration))
+                                    .font(.caption.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(isPlaying ? Color.orange.opacity(0.2) : Color(.tertiarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
             }
         }
         .padding()
@@ -65,18 +131,21 @@ struct AudioStatusView: View {
     // MARK: - Helpers
 
     private var statusColor: Color {
+        if isRecording { return .red }
         if isCapturing { return .green }
         if isAvailable { return .orange }
         return .secondary
     }
 
     private var statusText: String {
+        if isRecording { return "Recording Audio" }
         if isCapturing { return "Capturing Audio" }
         if isAvailable { return "Available" }
         return "Not Available"
     }
 
     private var iconName: String {
+        if isRecording { return "record.circle" }
         if isCapturing { return "mic.fill" }
         if isAvailable { return "mic.badge.plus" }
         return "mic.slash"
