@@ -1,0 +1,23 @@
+{
+  "name": "@emory/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11",
+    "uuid": "^11"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "@types/uuid": "^10",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}

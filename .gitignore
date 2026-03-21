@@ -7,9 +7,45 @@ xcuserdata/
 DerivedData/
 build/
 
-# macOS
-.DS_Store
-
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# Node
+node_modules/
+dist/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# AI Models (downloaded at runtime)
+models/
+*.onnx
+*.bin
+
+# Electron
+release/
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+.idea/
+
+# Frame storage (local captured images)
+frames/
+
+# Logs
+*.log

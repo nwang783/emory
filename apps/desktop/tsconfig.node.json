@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./out",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"]
+  },
+  "include": ["src/main/**/*", "src/preload/**/*", "electron.vite.config.ts"]
+}
