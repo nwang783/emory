@@ -12,6 +12,7 @@ import {
   listTailscaleIpv4,
   resolveListenHost,
 } from './remote-ingest-network.js'
+import { MobileApiService } from './mobile-api.service.js'
 
 const SERVICE_VERSION = 1
 
@@ -20,6 +21,8 @@ export class RemoteIngestServerService {
   private beaconSocket: dgram.Socket | null = null
   private beaconTimer: ReturnType<typeof setInterval> | null = null
   private lastError: string | null = null
+
+  constructor(private readonly mobileApiService?: MobileApiService) {}
 
   getStatus(persisted: RemoteIngestPersisted): RemoteIngestStatus {
     const listening = this.httpServer !== null && this.httpServer.listening
@@ -99,7 +102,11 @@ export class RemoteIngestServerService {
     }
 
     const server = http.createServer((req, res) => {
-      if (req.method === 'GET' && req.url?.split('?')[0] === '/health') {
+      const baseUrl = `http://${req.headers.host ?? '127.0.0.1'}`
+      const url = new URL(req.url ?? '/', baseUrl)
+      const pathname = url.pathname
+
+      if (req.method === 'GET' && pathname === '/health') {
         const body = JSON.stringify({
           ok: true,
           service: 'emory-ingest',
@@ -115,11 +122,75 @@ export class RemoteIngestServerService {
         res.end(body)
         return
       }
-      if (req.method === 'GET' && req.url?.split('?')[0] === '/') {
+
+      if (req.method === 'GET' && pathname === '/api/v1/people') {
+        this.sendJson(res, 200, this.mobileApiService?.getPeople() ?? { people: [] })
+        return
+      }
+
+      if (req.method === 'GET' && pathname === '/api/v1/memories') {
+        this.sendJson(
+          res,
+          200,
+          this.mobileApiService?.getMemoriesGroupedByPerson(this.parseLimit(url.searchParams.get('limitPerPerson'))) ?? {
+            groups: [],
+          },
+        )
+        return
+      }
+
+      if (req.method === 'GET' && pathname === '/api/v1/encounters/recent') {
+        this.sendJson(res, 200, this.mobileApiService?.getRecentEncounters(this.parseLimit(url.searchParams.get('limit'))) ?? { encounters: [] })
+        return
+      }
+
+      if (req.method === 'GET' && pathname === '/api/v1/home') {
+        this.sendJson(
+          res,
+          200,
+          this.mobileApiService?.getHome(this.parseLimit(url.searchParams.get('limit'))) ?? {
+            self: null,
+            people: [],
+            recentEncounters: [],
+          },
+        )
+        return
+      }
+
+      const personDetailMatch = pathname.match(/^\/api\/v1\/people\/([^/]+)$/)
+      if (req.method === 'GET' && personDetailMatch) {
+        const personId = decodeURIComponent(personDetailMatch[1] ?? '')
+        const result = this.mobileApiService?.getPersonDetail(
+          personId,
+          this.parseLimit(url.searchParams.get('memoryLimit')),
+          this.parseLimit(url.searchParams.get('encounterLimit')),
+        )
+        if (!result) {
+          this.sendJson(res, 404, { error: 'Person not found' })
+          return
+        }
+        this.sendJson(res, 200, result)
+        return
+      }
+
+      const personMemoriesMatch = pathname.match(/^\/api\/v1\/people\/([^/]+)\/memories$/)
+      if (req.method === 'GET' && personMemoriesMatch) {
+        const personId = decodeURIComponent(personMemoriesMatch[1] ?? '')
+        const result = this.mobileApiService?.getPersonMemories(personId, this.parseLimit(url.searchParams.get('limit')))
+        if (!result) {
+          this.sendJson(res, 404, { error: 'Person not found' })
+          return
+        }
+        this.sendJson(res, 200, result)
+        return
+      }
+
+      if (req.method === 'GET' && pathname === '/') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
         res.end('Emory remote ingest — use GET /health\n')
         return
       }
+
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
       res.end('Not found\n')
     })
@@ -200,5 +271,19 @@ export class RemoteIngestServerService {
       console.warn('[RemoteIngest] Beacon bind failed:', message)
       this.stopBeacon()
     }
+  }
+
+  private sendJson(res: http.ServerResponse, statusCode: number, body: unknown): void {
+    res.writeHead(statusCode, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    res.end(JSON.stringify(body))
+  }
+
+  private parseLimit(raw: string | null): number | undefined {
+    if (!raw) return undefined
+    const parsed = Number.parseInt(raw, 10)
+    return Number.isFinite(parsed) ? parsed : undefined
   }
 }

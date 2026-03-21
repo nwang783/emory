@@ -5,6 +5,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var settings = AppSettings.shared
+    @State private var connectionStore = DesktopConnectionStore.shared
 
     var body: some View {
         ScrollView {
@@ -28,18 +29,46 @@ struct SettingsView: View {
 
                     Divider()
 
-                    // Backend URL
+                    // Desktop URL
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Backend URL")
+                        Text("Desktop URL")
                             .font(.system(size: settings.fontSize.bodySize, weight: .medium))
                             .foregroundStyle(EmoryTheme.textPrimary)
-                        TextField("https://api.example.com/", text: $settings.backendURL)
+                        Text("Enter the desktop server URL, for example `http://100.x.y.z:18763`.")
+                            .font(.system(size: settings.fontSize.captionSize))
+                            .foregroundStyle(EmoryTheme.textSecondary)
+                        TextField("http://100.x.y.z:18763", text: $settings.backendURL)
                             .font(.system(size: settings.fontSize.captionSize))
                             .padding(12)
                             .background(Color(.systemGray6))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
+
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await connectionStore.testConnection() }
+                            } label: {
+                                Text(connectionStore.isTesting ? "Testing..." : "Test Connection")
+                                    .font(.system(size: settings.fontSize.captionSize, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(EmoryTheme.primary)
+                                    .clipShape(Capsule())
+                            }
+                            .disabled(connectionStore.isTesting)
+
+                            Text(connectionStore.friendlyName ?? connectionStore.statusText)
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(connectionStore.isConnected ? EmoryTheme.secondary : EmoryTheme.textSecondary)
+                        }
+
+                        if let lastError = connectionStore.lastError {
+                            Text(lastError)
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.destructive)
+                        }
                     }
                 }
 

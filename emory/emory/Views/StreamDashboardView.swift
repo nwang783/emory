@@ -201,7 +201,7 @@ struct StreamDashboardView: View {
 
     // Simulate recognition for demo purposes
     func simulateRecognition() {
-        recognizedPerson = Person.samplePeople.first
+        recognizedPerson = PeopleStore.shared.people.first ?? Person.samplePeople.first
         withAnimation(.easeInOut(duration: 0.5)) {
             showRecognitionBanner = true
         }

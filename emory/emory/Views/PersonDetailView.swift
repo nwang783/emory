@@ -12,6 +12,11 @@ struct PersonDetailView: View {
     @State private var newNoteSubtitle = ""
     @State private var showRemoveConfirmation = false
     @State private var showEnrollConfirmation = false
+    @State private var detailPerson: Person?
+    @State private var recentMemories: [PersonMemory] = []
+    @State private var recentEncounters: [EncounterSummary] = []
+    @State private var isLoading = false
+    @State private var loadError: String?
 
     var body: some View {
         ScrollView {
@@ -22,75 +27,122 @@ struct PersonDetailView: View {
                         .fill(EmoryTheme.primary.opacity(0.1))
                         .frame(height: 260)
 
-                    Image(systemName: person.photoName ?? "person.circle.fill")
-                        .font(.system(size: 100))
-                        .foregroundStyle(EmoryTheme.primary.opacity(0.5))
+                    FaceThumbnailView(
+                        faceThumbnail: resolvedPerson.faceThumbnail,
+                        fallbackSystemImage: resolvedPerson.photoName ?? "person.circle.fill",
+                        size: 132
+                    )
                 }
 
                 // Name and relationship
                 VStack(spacing: 4) {
-                    Text(person.name)
+                    Text(resolvedPerson.name)
                         .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
                         .foregroundStyle(EmoryTheme.textPrimary)
-                    Text(person.relationship)
+                    Text(resolvedPerson.relationship)
                         .font(.system(size: settings.fontSize.bodySize))
                         .foregroundStyle(EmoryTheme.primary)
                 }
                 .padding(.top, 20)
                 .padding(.bottom, 24)
 
-                // Memory Notes
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Memory Notes")
-                        .font(.system(size: settings.fontSize.titleSize, weight: .semibold))
-                        .foregroundStyle(EmoryTheme.textPrimary)
-                        .padding(.horizontal, 24)
-
-                    ForEach(person.memoryNotes) { note in
-                        HStack(alignment: .top, spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(noteColor(for: note.icon).opacity(0.15))
-                                    .frame(width: 40, height: 40)
-                                Image(systemName: note.icon)
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(noteColor(for: note.icon))
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(note.title)
-                                    .font(.system(size: settings.fontSize.bodySize, weight: .medium))
-                                    .foregroundStyle(EmoryTheme.textPrimary)
-                                if let subtitle = note.subtitle {
-                                    Text(subtitle)
-                                        .font(.system(size: settings.fontSize.captionSize))
-                                        .foregroundStyle(EmoryTheme.textSecondary)
-                                }
-                            }
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 24)
+                if isLoading && !settings.isMockMode {
+                    ProgressView("Loading details...")
+                        .padding(.bottom, 24)
+                } else if let loadError, !settings.isMockMode {
+                    contentSection(title: "Connection") {
+                        Text(loadError)
+                            .font(.system(size: settings.fontSize.captionSize))
+                            .foregroundStyle(EmoryTheme.textSecondary)
                     }
                 }
-                .padding(.bottom, 24)
+
+                contentSection(title: "Key Facts") {
+                    if resolvedPerson.keyFacts.isEmpty {
+                        emptyState("No key facts yet.")
+                    } else {
+                        ForEach(resolvedPerson.keyFacts, id: \.self) { fact in
+                            detailRow(icon: "sparkles", color: EmoryTheme.secondary, title: fact)
+                        }
+                    }
+                }
+
+                contentSection(title: "Important Dates") {
+                    if resolvedPerson.importantDates.isEmpty {
+                        emptyState("No important dates saved.")
+                    } else {
+                        ForEach(resolvedPerson.importantDates, id: \.label) { date in
+                            detailRow(icon: "calendar", color: EmoryTheme.primary, title: date.label, subtitle: date.date)
+                        }
+                    }
+                }
+
+                contentSection(title: "Recent Topics") {
+                    if resolvedPerson.lastTopics.isEmpty {
+                        emptyState("No recent topics yet.")
+                    } else {
+                        ForEach(resolvedPerson.lastTopics, id: \.self) { topic in
+                            detailRow(icon: "bubble.left.and.bubble.right", color: EmoryTheme.primary, title: topic)
+                        }
+                    }
+                }
+
+                contentSection(title: "Recent Memories") {
+                    if recentMemories.isEmpty {
+                        emptyState("No extracted memories yet.")
+                    } else {
+                        ForEach(recentMemories) { memory in
+                            detailRow(
+                                icon: iconForMemoryType(memory.memoryType),
+                                color: noteColor(for: iconForMemoryType(memory.memoryType)),
+                                title: memory.memoryText,
+                                subtitle: memory.memoryDate
+                            )
+                        }
+                    }
+                }
+
+                contentSection(title: "Recent Encounters") {
+                    if recentEncounters.isEmpty {
+                        emptyState("No recent encounters yet.")
+                    } else {
+                        ForEach(recentEncounters) { encounter in
+                            detailRow(
+                                icon: encounter.isImportant ? "star.fill" : "clock",
+                                color: encounter.isImportant ? EmoryTheme.secondary : EmoryTheme.primary,
+                                title: encounter.personName,
+                                subtitle: encounter.startedAt
+                            )
+                        }
+                    }
+                }
+
+                if let notes = resolvedPerson.notes, !notes.isEmpty {
+                    contentSection(title: "Notes") {
+                        Text(notes)
+                            .font(.system(size: settings.fontSize.bodySize))
+                            .foregroundStyle(EmoryTheme.textPrimary)
+                    }
+                }
 
                 // Action buttons
                 VStack(spacing: 12) {
                     // Add Note
-                    Button {
-                        showAddNote = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Add Note")
-                                .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                    if settings.isMockMode {
+                        Button {
+                            showAddNote = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                Text("Add Note")
+                                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(EmoryTheme.secondary)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(EmoryTheme.secondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
 
                     // Enroll Face
@@ -114,19 +166,26 @@ struct PersonDetailView: View {
                     }
 
                     // Remove Person
-                    Button {
-                        showRemoveConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "person.badge.minus")
-                            Text("Remove Person")
-                                .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                    if settings.isMockMode {
+                        Button {
+                            showRemoveConfirmation = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "person.badge.minus")
+                                Text("Remove Person")
+                                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                            }
+                            .foregroundStyle(EmoryTheme.destructive)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(EmoryTheme.destructive.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
-                        .foregroundStyle(EmoryTheme.destructive)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(EmoryTheme.destructive.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Text("This mobile view is currently read-only.")
+                            .font(.system(size: settings.fontSize.captionSize))
+                            .foregroundStyle(EmoryTheme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -134,10 +193,10 @@ struct PersonDetailView: View {
             }
         }
         .background(EmoryTheme.background.ignoresSafeArea())
-        .navigationTitle("About \(person.name)")
+        .navigationTitle("About \(resolvedPerson.name)")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
-            "Are you sure you want to remove \(person.name)?",
+            "Are you sure you want to remove \(resolvedPerson.name)?",
             isPresented: $showRemoveConfirmation,
             titleVisibility: .visible
         ) {
@@ -152,7 +211,7 @@ struct PersonDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will register \(person.name)'s face so the glasses can recognize them. Make sure they're in front of the camera.")
+            Text("This will register \(resolvedPerson.name)'s face so the glasses can recognize them. Make sure they're in front of the camera.")
         }
         .sheet(isPresented: $showAddNote) {
             AddNoteSheet(
@@ -166,6 +225,9 @@ struct PersonDetailView: View {
                 showAddNote = false
             }
         }
+        .task(id: "\(settings.isMockMode)-\(settings.backendURL)-\(person.id)") {
+            await loadDetail()
+        }
     }
 
     private func noteColor(for icon: String) -> Color {
@@ -174,6 +236,96 @@ struct PersonDetailView: View {
         if icon.contains("gift") || icon.contains("heart") { return EmoryTheme.destructive }
         if icon.contains("phone") || icon.contains("clock") { return EmoryTheme.primary }
         return EmoryTheme.secondary
+    }
+
+    private var resolvedPerson: Person {
+        detailPerson ?? person
+    }
+
+    @ViewBuilder
+    private func contentSection(title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.system(size: settings.fontSize.titleSize, weight: .semibold))
+                .foregroundStyle(EmoryTheme.textPrimary)
+                .padding(.horizontal, 24)
+
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+        }
+        .padding(.bottom, 24)
+    }
+
+    private func detailRow(icon: String, color: Color, title: String, subtitle: String? = nil) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundStyle(color)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                    .foregroundStyle(EmoryTheme.textPrimary)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: settings.fontSize.captionSize))
+                        .foregroundStyle(EmoryTheme.textSecondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private func emptyState(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: settings.fontSize.captionSize))
+            .foregroundStyle(EmoryTheme.textSecondary)
+            .padding(.horizontal, 24)
+    }
+
+    private func iconForMemoryType(_ memoryType: String) -> String {
+        switch memoryType {
+        case "event": return "calendar"
+        case "preference": return "heart"
+        case "relationship": return "person.2"
+        case "health": return "cross.case"
+        case "routine": return "clock"
+        default: return "sparkles"
+        }
+    }
+
+    private func loadDetail() async {
+        guard !settings.isMockMode else {
+            detailPerson = person
+            recentMemories = []
+            recentEncounters = []
+            loadError = nil
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let client = try DesktopApiClient.fromSettings()
+            let response = try await client.fetchPersonDetail(personId: person.id)
+            detailPerson = response.person.asPerson()
+            recentMemories = response.recentMemories.map { $0.asPersonMemory() }
+            recentEncounters = response.recentEncounters.map { $0.asEncounterSummary() }
+            loadError = nil
+            DesktopConnectionStore.shared.markConnected()
+        } catch {
+            loadError = error.localizedDescription
+            DesktopConnectionStore.shared.markDisconnected(reason: error.localizedDescription)
+        }
     }
 }
 

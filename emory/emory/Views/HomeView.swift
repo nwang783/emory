@@ -2,10 +2,11 @@ import SwiftUI
 
 // MARK: - Home View
 // Large, friendly welcome screen for dementia patients.
-// Two oversized card buttons for People and Settings.
+// Two oversized card buttons for People and Memories.
 
 struct HomeView: View {
     @State private var settings = AppSettings.shared
+    @State private var connectionStore = DesktopConnectionStore.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,9 +21,9 @@ struct HomeView: View {
                 // Connection badge
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(Color.gray)
+                        .fill(connectionStore.isConnected ? EmoryTheme.secondary : Color.gray)
                         .frame(width: 8, height: 8)
-                    Text("Disconnected")
+                    Text(connectionStore.friendlyName ?? connectionStore.statusText)
                         .font(.system(size: settings.fontSize.captionSize))
                         .foregroundStyle(EmoryTheme.textSecondary)
                 }
@@ -70,10 +71,10 @@ struct HomeView: View {
                     )
                 }
 
-                NavigationLink(destination: SettingsView()) {
+                NavigationLink(destination: MemoriesView()) {
                     HomeCardButton(
-                        icon: "gearshape.fill",
-                        title: "Settings",
+                        icon: "brain.head.profile",
+                        title: "Memories",
                         color: EmoryTheme.secondary,
                         fontSize: settings.fontSize
                     )
@@ -85,6 +86,10 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(EmoryTheme.background.ignoresSafeArea())
+        .task(id: "\(settings.isMockMode)-\(settings.backendURL)") {
+            guard !settings.isMockMode else { return }
+            await connectionStore.testConnection()
+        }
     }
 }
 
