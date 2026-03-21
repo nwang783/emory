@@ -10,7 +10,8 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "postinstall": "npm --prefix apps/desktop run postinstall"
   },
   "devDependencies": {
     "turbo": "^2"

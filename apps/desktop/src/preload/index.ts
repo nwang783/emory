@@ -136,6 +136,8 @@ const emoryApi = {
     getUserDataDir: (): Promise<string> => ipcRenderer.invoke('app:get-user-data-dir'),
     getConversationsDir: (): Promise<string> => ipcRenderer.invoke('app:get-conversations-dir'),
     getTtsDir: (): Promise<string> => ipcRenderer.invoke('app:get-tts-dir'),
+    ensureMediaAccess: (kind: 'camera' | 'microphone'): Promise<{ status: string; granted: boolean }> =>
+      ipcRenderer.invoke('app:ensure-media-access', kind),
     openConversationsFolder: (): Promise<{ success: true } | { success: false; error: string }> =>
       ipcRenderer.invoke('app:open-conversations-folder'),
     openTtsFolder: (): Promise<{ success: true } | { success: false; error: string }> =>

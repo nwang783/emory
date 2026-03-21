@@ -26,6 +26,21 @@ export function useWebcam(): UseWebcamResult {
       setError(null)
       setCameraLabel(null)
 
+      const [cameraPermission, microphonePermission] = await Promise.all([
+        window.emoryApi.app.ensureMediaAccess('camera'),
+        window.emoryApi.app.ensureMediaAccess('microphone'),
+      ])
+
+      if (!cameraPermission.granted) {
+        setError(`Camera access is ${cameraPermission.status}. Enable it in macOS Privacy & Security settings.`)
+        return
+      }
+
+      if (!microphonePermission.granted) {
+        setError(`Microphone access is ${microphonePermission.status}. Enable it in macOS Privacy & Security settings.`)
+        return
+      }
+
       const devices = await navigator.mediaDevices.enumerateDevices()
       const videoDevices = devices.filter((d) => d.kind === 'videoinput')
       console.log('[Webcam] Available video devices:', videoDevices.length, videoDevices)

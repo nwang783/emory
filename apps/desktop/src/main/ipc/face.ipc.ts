@@ -17,6 +17,7 @@ const autoLearnTimestamps = new Map<string, number>()
 let faceService: FaceService | null = null
 let activeDetectionThreshold = 0.35
 let activeMatchThreshold = 0.45
+let faceInitializationPromise: Promise<{ success: boolean; error?: string; provider?: string }> | null = null
 
 export async function disposeFaceService(): Promise<void> {
   if (faceService) {
@@ -49,18 +50,30 @@ export function registerFaceIpc(
   )
 
   ipcMain.handle('face:initialize', async (): Promise<{ success: boolean; error?: string; provider?: string }> => {
-    try {
-      await ensureModels(modelsDir, (modelName, percent) => {
-        console.log(`[face:initialize] Downloading ${modelName}: ${percent}%`)
-      })
-      faceService = new FaceService(modelsDir)
-      await faceService.initialize()
+    if (faceService) {
       return { success: true, provider: faceService.getActiveProvider() }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error('[face:initialize] Failed:', message)
-      return { success: false, error: message }
     }
+
+    if (!faceInitializationPromise) {
+      faceInitializationPromise = (async () => {
+        try {
+          await ensureModels(modelsDir, (modelName, percent) => {
+            console.log(`[face:initialize] Downloading ${modelName}: ${percent}%`)
+          })
+          faceService = new FaceService(modelsDir)
+          await faceService.initialize()
+          return { success: true, provider: faceService.getActiveProvider() }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error('[face:initialize] Failed:', message)
+          return { success: false, error: message }
+        } finally {
+          faceInitializationPromise = null
+        }
+      })()
+    }
+
+    return faceInitializationPromise
   })
 
   ipcMain.handle(

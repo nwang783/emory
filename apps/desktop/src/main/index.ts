@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, session, shell, systemPreferences } from 'electron'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -21,6 +21,44 @@ import { loadEnvironment } from './services/env.service.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
+}
+
+async function ensureMacMediaPermissions(): Promise<void> {
+  if (process.platform !== 'darwin') return
+
+  const cameraStatus = systemPreferences.getMediaAccessStatus('camera')
+  const microphoneStatus = systemPreferences.getMediaAccessStatus('microphone')
+  console.log(`[Permissions] macOS camera=${cameraStatus} microphone=${microphoneStatus}`)
+
+  if (cameraStatus === 'not-determined') {
+    const granted = await systemPreferences.askForMediaAccess('camera')
+    console.log(`[Permissions] Camera access granted=${granted}`)
+  }
+
+  if (microphoneStatus === 'not-determined') {
+    const granted = await systemPreferences.askForMediaAccess('microphone')
+    console.log(`[Permissions] Microphone access granted=${granted}`)
+  }
+}
+
+async function ensureMediaAccess(kind: 'camera' | 'microphone'): Promise<{ status: string; granted: boolean }> {
+  if (process.platform !== 'darwin') {
+    return { status: 'granted', granted: true }
+  }
+
+  const currentStatus = systemPreferences.getMediaAccessStatus(kind)
+  if (currentStatus === 'granted') {
+    return { status: currentStatus, granted: true }
+  }
+
+  if (currentStatus === 'not-determined') {
+    const granted = await systemPreferences.askForMediaAccess(kind)
+    const nextStatus = systemPreferences.getMediaAccessStatus(kind)
+    console.log(`[Permissions] ${kind} access granted=${granted} status=${nextStatus}`)
+    return { status: nextStatus, granted }
+  }
+
+  return { status: currentStatus, granted: false }
 }
 
 function createWindow(): BrowserWindow {
@@ -55,9 +93,10 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   loadEnvironment()
   electronApp.setAppUserModelId('com.emory.desktop')
+  await ensureMacMediaPermissions()
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowed = ['media', 'mediaKeySystem', 'display-capture']
@@ -77,6 +116,7 @@ app.whenReady().then(() => {
   ipcMain.handle('app:get-user-data-dir', () => app.getPath('userData'))
   ipcMain.handle('app:get-conversations-dir', () => getConversationsRootDir())
   ipcMain.handle('app:get-tts-dir', () => getTtsRootDir())
+  ipcMain.handle('app:ensure-media-access', (_event, kind: 'camera' | 'microphone') => ensureMediaAccess(kind))
   ipcMain.handle('app:open-conversations-folder', async () => {
     const dir = getConversationsRootDir()
     await mkdir(dir, { recursive: true })

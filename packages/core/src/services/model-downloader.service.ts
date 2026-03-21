@@ -81,6 +81,7 @@ export async function downloadModel(
       })
     })
 
+    await fsp.mkdir(path.dirname(destPath), { recursive: true })
     await fsp.rename(tempPath, destPath)
   } catch (err) {
     fileStream.destroy()

@@ -1,14 +1,19 @@
+import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
 import Database from 'better-sqlite3'
 import type { Database as DatabaseType } from 'better-sqlite3'
 import type { StorageAdapter } from './storage.adapter.js'
 
 const CURRENT_SCHEMA_VERSION = 6
+const require = createRequire(import.meta.url)
+const betterSqlite3Root = dirname(require.resolve('better-sqlite3/package.json'))
+const betterSqlite3NativeBinding = join(betterSqlite3Root, 'build', 'Release', 'better_sqlite3.node')
 
 export class SqliteAdapter implements StorageAdapter {
   private db: DatabaseType
 
   constructor(dbPath: string = 'emory.db') {
-    this.db = new Database(dbPath)
+    this.db = new Database(dbPath, { nativeBinding: betterSqlite3NativeBinding })
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
   }
