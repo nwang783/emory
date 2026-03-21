@@ -3,13 +3,17 @@
 | Doc | Scope |
 |-----|--------|
 | [apps/desktop.md](./apps/desktop.md) | Electron app: 7-tab layout, IPC, preload, stores, UI components |
+| [apps/desktop-ui.md](./apps/desktop-ui.md) | Desktop UI shell: Vercel/Tailscale-inspired tokens, fonts, sidebar/header |
+| [apps/connections-graph.md](./apps/connections-graph.md) | Connections graph: edit flows, cascade to memories, where types live |
 | [packages/core.md](./packages/core.md) | Face engine, quality, liveness, appearance, grading services |
 | [packages/db.md](./packages/db.md) | SQLite adapter, repositories, schema through v6 (indexes, conversations), retention |
 | [architecture/cloud-sync.md](./architecture/cloud-sync.md) | Cloud sync protocol design and migration path |
 | [architecture/conversation-recording.md](./architecture/conversation-recording.md) | Face-linked mic capture, debounce rules, IPC + storage layout |
 | [architecture/remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md) | Remote ingest hub: Tailscale, HTTP `/health`, settings persistence, IPC |
 | [architecture/remote-discovery.md](./architecture/remote-discovery.md) | UDP multicast beacon for phone discovery (manual config remains first-class) |
-| [architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md) | **iOS implementer guide:** Tailscale, `/health`, UDP beacon, manual config, planned WSS/WebRTC |
+| [architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md) | **iOS implementer guide:** Tailscale, `/health`, WS `/ingest`, UDP beacon, manual config |
+| [architecture/remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md) | Remote camera via ingest: WS `/ingest`, Camera viewer, `@emory/ingest-protocol` |
+| [packages/ingest-protocol](../packages/ingest-protocol/) | Shared binary message IDs + parser (bridge-server + desktop ingest) |
 | [agents/gstack.md](./agents/gstack.md) | **gstack** skills: local **`.agents/`** (gitignored), clone + `./setup`, Windows/Git Bash, optional Cursor stubs |
 
 Start with **desktop** for end-to-end behaviour, then **core** / **db** for types and persistence.

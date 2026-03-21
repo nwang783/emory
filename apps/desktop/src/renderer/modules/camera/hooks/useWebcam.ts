@@ -11,6 +11,9 @@ type UseWebcamResult = {
   start: () => Promise<void>
   stop: () => void
   captureFrame: () => ArrayBuffer | null
+  /** Dimensions of the last decoded video frame (for overlays / IPC). */
+  frameWidth: number
+  frameHeight: number
 }
 
 export function useWebcam(): UseWebcamResult {
@@ -20,6 +23,8 @@ export function useWebcam(): UseWebcamResult {
   const [isActive, setIsActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cameraLabel, setCameraLabel] = useState<string | null>(null)
+  const [frameWidth, setFrameWidth] = useState(640)
+  const [frameHeight, setFrameHeight] = useState(480)
 
   const start = useCallback(async () => {
     try {
@@ -127,5 +132,37 @@ export function useWebcam(): UseWebcamResult {
     }
   }, [])
 
-  return { videoRef, canvasRef, isActive, error, cameraLabel, start, stop, captureFrame }
+  useEffect(() => {
+    if (!isActive) return
+    const v = videoRef.current
+    if (!v) return
+
+    const syncSize = (): void => {
+      const w = v.videoWidth
+      const h = v.videoHeight
+      if (w > 0 && h > 0) {
+        setFrameWidth(w)
+        setFrameHeight(h)
+      }
+    }
+
+    v.addEventListener('loadedmetadata', syncSize)
+    syncSize()
+    return () => {
+      v.removeEventListener('loadedmetadata', syncSize)
+    }
+  }, [isActive])
+
+  return {
+    videoRef,
+    canvasRef,
+    isActive,
+    error,
+    cameraLabel,
+    start,
+    stop,
+    captureFrame,
+    frameWidth,
+    frameHeight,
+  }
 }

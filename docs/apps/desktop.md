@@ -2,6 +2,8 @@
 
 Electron desktop application for the Emory face recognition system. Built with electron-vite, React 19, TypeScript, and Tailwind CSS.
 
+**UI shell & design tokens:** see [desktop-ui.md](./desktop-ui.md) (typography, sidebar/header layout, shadcn usage).
+
 ## Overview
 
 The desktop app is the primary Emory client: it captures webcam frames, runs SCRFD detection and ArcFace embedding extraction via `@emory/core`, matches against embeddings in `@emory/db`, and renders live overlays with a **sidebar-driven layout**: **Camera → People → Connections → Activity → Analytics → Embeddings → Settings**. `LivenessService` and `AppearanceService` from `@emory/core` are available for pipeline integration but are **not** invoked from the default `face:*` IPC handlers in this release.
@@ -28,11 +30,11 @@ apps/desktop/
     │   │   ├── face.ipc.ts           # Face processing IPC handlers
     │   │   ├── unknown.ipc.ts        # Unknown person tracking IPC handlers
     │   │   ├── conversation.ipc.ts   # Save/process recordings, list rows, query memories (audio)
-    │   │   └── remote-ingest.ipc.ts  # Remote hub: get/apply config, status (Tailscale ingest Phase 0)
+    │   │   └── remote-ingest.ipc.ts  # Remote hub: get/apply config, status; broadcast remote-ingest:updated
     │   └── services/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
     │       ├── remote-ingest-settings.service.ts  # Persist remote-ingest-config.json
-    │       ├── remote-ingest-server.service.ts   # HTTP /health + UDP discovery beacon
+    │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest relay + UDP beacon
     │       ├── remote-ingest-network.ts          # Tailscale 100.x / bind helper
     │       ├── remote-ingest.types.ts            # Config + status types
     │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
@@ -96,6 +98,7 @@ apps/desktop/
             ├── components/
             │   ├── Header.tsx         # Top bar: branding, model status, settings
             │   ├── Sidebar.tsx        # Vertical tab navigation (aria-label + aria-current)
+            │   ├── PageLayout.tsx     # PageShell, header/toolbar/scroll + PageWorkspace / mini sidebars
             │   ├── StatusBar.tsx      # Bottom status bar (FPS, faces, timing)
             │   └── ErrorBoundary.tsx  # Catches render errors in main content; Try again resets state
             ├── lib/
@@ -112,8 +115,8 @@ apps/desktop/
 | Layer | Responsibility |
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
-| **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments. `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
-| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; **`remote-ingest.ipc.ts`** — `remote-ingest:get-config`, `get-status`, `apply`; `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
+| **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments; extraction receives **graph** context via `RelationshipRepository.findBetween(self, target)` (not `people.relationship`). `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
+| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; **`remote-ingest.ipc.ts`** — `remote-ingest:get-config`, `get-status`, `apply` (+ **`remote-ingest:updated`** push after apply); `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
 
@@ -145,6 +148,8 @@ The **Remote ingest** card (`RemoteIngestSettings.tsx`) exposes:
 - **Copy connection details** puts health URLs and instance id on the clipboard for manual phone setup.
 
 See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md) and [Remote discovery](../architecture/remote-discovery.md).
+
+**Planned:** When remote ingest is enabled, the **Camera** tab should show the **phone / Ray-Ban app video stream** instead of local `getUserMedia` — phased plan (WebSocket + JPEG aligned with `apps/bridge-server`, then optional WebRTC): [Remote camera (desktop) plan](../architecture/remote-camera-desktop-plan.md).
 
 The **Data Retention** card in `SettingsPanel` exposes:
 
@@ -250,13 +255,14 @@ The desktop main process now supports a hackathon-grade spoken memory query flow
 1. Save or receive a short query audio clip.
 2. Transcribe it with `DeepgramService`.
 3. Convert the spoken question into a retrieval plan with `MemoryQueryUnderstandingService`.
-4. Search SQLite using fuzzy person-name matching plus time-window and text filters in `ConversationRepository` / `PeopleRepository`.
-5. Synthesize a short grounded answer with `MemoryAnswerService`.
+4. Search SQLite using fuzzy person-name matching plus time-window and text filters in `ConversationRepository` / `PeopleRepository`. For each resolved person, **`MemoryQueryService`** always merges **`memory_type = relationship`** rows (graph-backed lines) via **`getRelationshipMemoriesForPersonIds`**, and loads **`RelationshipRepository.findBetween(self, person)`** so **`matchedGraphRelationships`** is passed into **`MemoryAnswerService`** as first-class evidence (not only the last N memories by date).
+5. Synthesize a short grounded answer with `MemoryAnswerService` (prompt instructs using **`matchedGraphRelationships`** for “relationship to me” style questions).
 
 This supports questions like:
 
 - "Who is Ryan?"
 - "What did I do at 2 PM today?"
+- "What is Perry’s relationship to me?" (uses Connections graph edge + relationship memories)
 
 Current limitation:
 
@@ -326,6 +332,8 @@ After extracting the embedding, registration compares it against all stored embe
 | `db:relationships:delete` | Renderer → Main | `id` | `boolean` |
 
 `db:relationships:create` and `db:relationships:update` accept a string `type` from the renderer; the main process normalises it to `RelationshipType` from `@emory/db` (`spouse`, `child`, `parent`, `sibling`, `friend`, `carer`, `neighbour`, `colleague`, `other`). Unknown values are stored as `other`.
+
+**Connections → memories:** After a successful **`create`** or **`update`**, if **`people.findSelf()`** is set and the edge touches that person, main runs **`syncGraphRelationshipToMemory`** ([`relationship-memory-sync.service.ts`](../../apps/desktop/src/main/services/relationship-memory-sync.service.ts)) and upserts a **`person_memories`** row (`memory_type: relationship`, optional FK **`relationship_id`**) on the *other* person so Memory Browser and **`conversation:query-memories`** see the relationship. **`delete`** clears linked memory rows by `relationship_id` before removing the edge. No renderer changes.
 
 ### Embedding Operations (gallery / admin)
 
@@ -400,6 +408,7 @@ Session state is managed in-process: `encounter:start-session` stores the active
 | `remote-ingest:get-config` | Renderer → Main | `{ config, instanceId }` (persisted remote ingest settings) |
 | `remote-ingest:get-status` | Renderer → Main | `RemoteIngestStatus` (listening, addresses, beacon, errors) |
 | `remote-ingest:apply` | Renderer → Main | Partial config patch → `{ success, config?, status?, error? }` — saves file and restarts listener |
+| `remote-ingest:updated` | Main → Renderer | `{ config, instanceId, status }` — emitted after successful apply (all windows) |
 
 ### App Operations
 
@@ -467,6 +476,7 @@ The preload script exposes `window.emoryApi` — `face`, `db` (people, relations
 | `emoryApi.remoteIngest.getConfig()` | `remote-ingest:get-config` |
 | `emoryApi.remoteIngest.getStatus()` | `remote-ingest:get-status` |
 | `emoryApi.remoteIngest.apply(patch)` | `remote-ingest:apply` |
+| `emoryApi.remoteIngest.onUpdated(handler)` | Subscribe to `remote-ingest:updated`; returns unsubscribe |
 
 ## IPC Data Serialization
 
@@ -518,21 +528,22 @@ Subtitle under the product name: **Memory Assistant** (`Header.tsx`).
 | `StatusBar` | `shared/components/StatusBar.tsx` | Model status, FPS, face count, identified count, processing time, optional “identifying…”, optional auto-learn total, error line |
 | `SettingsPanel` | `modules/settings/components/SettingsPanel.tsx` | Card sections: Recognition (thresholds, auto-learn), Display (overlays), Performance (intervals), **Conversation recordings** (path + open folder), **Remote ingest** (Tailscale hub), Data Retention (cleanup policies) |
 | `PeopleList` | `modules/people/components/PeopleList.tsx` | People list with scroll area, loading skeletons, empty state. Accepts `fullWidth` prop for grid vs sidebar layout |
-| `PersonCard` | `modules/people/components/PersonCard.tsx` | Person card: avatar initials, relationship badge, embedding count, relative last-seen time, edit/delete actions |
-| `EditPersonModal` | `modules/people/components/EditPersonModal.tsx` | Dialog for editing person basic info + rich profile (key facts, conversation starters, important dates, last topics). **This is me** toggle calls `db.people.setSelf` / `getSelf` (clears previous self). Uses `ScrollArea` for compact layout. Saves via `db.people.update` + `db.people.updateProfile` |
+| `PersonCard` | `modules/people/components/PersonCard.tsx` | Person card: avatar initials, **graph** relationship badge (edge from self → person via `people.store` `graphEdgeToSelfByPersonId`), embedding count, relative last-seen time, edit/delete actions |
+| `EditPersonModal` | `modules/people/components/EditPersonModal.tsx` | Dialog for **name** + rich profile (key facts, conversation starters, important dates, last topics). Relationship role / connection notes are edited in Connections (graph), not here. **This is me** toggle calls `db.people.setSelf` / `getSelf`. Saves via `db.people.update` (name only from this UI) + `db.people.updateProfile` |
 | `TagListEditor` | `modules/people/components/TagListEditor.tsx` | Reusable string-list editor with badge display, add/remove, Enter-to-add. Used by EditPersonModal for key facts, conversation starters, last topics |
 | `ImportantDateEditor` | `modules/people/components/ImportantDateEditor.tsx` | Editor for `{label, date}` pairs with side-by-side label + date inputs. Used by EditPersonModal for important dates |
-| `RegisterFaceModal` | `modules/people/components/RegisterFaceModal.tsx` | Registration dialog with name, relationship, notes fields. Inline shared-stream viewfinder (countdown capture) and photo upload; persists **128×128 JPEG** thumbnail + **quality** on the new embedding (schema V3) |
+| `RegisterFaceModal` | `modules/people/components/RegisterFaceModal.tsx` | Registration dialog with **name** only (relationships are added in Connections). Inline shared-stream viewfinder (countdown capture) and photo upload; persists **128×128 JPEG** thumbnail + **quality** on the new embedding (schema V3) |
 | `ErrorBoundary` | `shared/components/ErrorBoundary.tsx` | Class boundary around `MainContent`; shows fallback UI and logs `componentDidCatch` |
 | `WebcamFeed` | `modules/camera/components/WebcamFeed.tsx` | Camera view: `detectOnly` loop + `processFrame` on `identifyIntervalMs`, track smoothing, optional auto-learn (`extractEmbedding` → `autoLearn`), GraduationCap “learned” badge |
 | `WhoIsThisButton` | `modules/camera/components/WhoIsThisButton.tsx` | Voice announcement button for identified people via Web Speech API |
 | `ActivityFeed` | `modules/activity/components/ActivityFeed.tsx` | Scrollable log of recognition events, auto-learns, person additions/removals |
-| `AnalyticsDashboard` | `modules/analytics/components/AnalyticsDashboard.tsx` | Analytics overview: summary stat cards, frequent visitors (30d), recent encounters, unknown sightings. Loads data from `encounter.getRecent`, `db.people.findAll`, `unknown.getAll` |
+| `AnalyticsDashboard` | `modules/analytics/components/AnalyticsDashboard.tsx` | Analytics overview: summary stat cards, frequent visitors (30d), recent encounters, unknown sightings. Loads `encounter.getRecent`, `db.people.findAll`, `unknown.getAll`, plus **`getSelf` + `relationships.getAll`** to label frequent visitors from the graph |
 | `SummaryCards` | `modules/analytics/components/SummaryCards.tsx` | Four stat cards: total people, total encounters, last-7-day encounters, active unknowns |
 | `FrequentVisitors` | `modules/analytics/components/FrequentVisitors.tsx` | Ranked list of people by encounter count in the last 30 days with relationship badges |
 | `RecentEncounters` | `modules/analytics/components/RecentEncounters.tsx` | Last 20 encounters showing person name, confidence badge, timestamp, duration |
 | `UnknownSightings` | `modules/analytics/components/UnknownSightings.tsx` | Unknown sighting list with sighting count, status badge, first/last seen dates |
-| `ConnectionsGraph` | `modules/connections/components/ConnectionsGraph.tsx` | **Ego network** from **`db.people.getSelf`**: only you and people reachable via relationship edges; **you** stay pinned at the viewport centre (no global centre pull on others). Edge colours from relationship type; node hues from free-text relationship field. **Add Relationship** defaults to **You → other person** when self is set. Onboarding if people exist but self is unset |
+| `ConnectionsGraph` | `modules/connections/components/ConnectionsGraph.tsx` | **Ego network** from **`db.people.getSelf`**: only you and people reachable via relationship edges; **you** stay pinned at the viewport centre. Edge colours from **`relationships.relationship_type`**; node hues/subtitles from the **edge to self** (not `people.relationship`). **Double-click** a node opens **`GraphNodeEditDialog`**. **Add Relationship** defaults to **You → other person** when self is set. Onboarding if people exist but self is unset. Graph edges sync to **`person_memories`** via **`db.ipc`**. See [Connections graph](./connections-graph.md) |
+| `GraphNodeEditDialog` | `modules/connections/components/GraphNodeEditDialog.tsx` | Rename person; list incident edges — change type/notes (**Apply**), **Remove edge**, or **Delete person** (cascades in SQLite). Refreshes graph + `loadPeople()` after changes |
 | `EmbeddingGallery` | `modules/embeddings/components/EmbeddingGallery.tsx` | **Embeddings** tab: rows **grouped by person**, 128×128 face **thumbnails**, **source** badges (`photo_upload` / `live_capture` / `auto_learn`), per-row **delete** / **reassign**, **bulk selection** |
 
 ## State Management
@@ -550,10 +561,11 @@ Four Zustand stores provide reactive state without prop drilling:
 
 ### `people.store.ts`
 - `people` — list of registered people (`isSelf` from DB; **You** badge on `PersonCard`), plus optional profile fields: `keyFacts`, `conversationStarters`, `importantDates`, `lastTopics`
+- `graphEdgeToSelfByPersonId` — map of person id → `{ relationshipType, notes }` for the edge between **designated self** and that person (from `relationships.getAll` + `getSelf`), used by `PersonCard`, `WebcamFeed` / `WhoIsThisButton`, etc.
 - `ImportantDate` — `{ label: string, date: string }` type for date entries
 - `PersonProfile` — grouped type for profile fields (`keyFacts`, `conversationStarters`, `importantDates`, `lastTopics`)
-- `loadPeople()` — fetches all people from DB via IPC
-- `addPerson()` — creates person and adds to local state
+- `loadPeople()` — fetches people, self, and all relationships via IPC, then builds `graphEdgeToSelfByPersonId`
+- `addPerson()` — creates person (name only from UI) and adds to local state
 - `removePerson()` — deletes person and removes from local state
 
 ### `settings.store.ts`
@@ -622,3 +634,5 @@ The app uses `electron-vite` which provides:
 - HMR for the renderer process
 - Auto-restart for main process changes
 - Proper externalization of native Node modules
+
+**`dotenv` in the main process** is listed in `exclude` for `externalizeDepsPlugin` (see `electron.vite.config.ts`) so it is **bundled** into `out/main`. If it were left external, Node would resolve `import 'dotenv'` from `out/main/` and often fail with `ERR_MODULE_NOT_FOUND` when dependencies are hoisted to the monorepo root—`npm install dotenv` in the wrong folder does not fix that.

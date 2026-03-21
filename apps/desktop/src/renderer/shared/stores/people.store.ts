@@ -1,5 +1,10 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
+import {
+  buildGraphEdgesToSelf,
+  type GraphEdgeToSelf,
+  type RelationshipEndpointRow,
+} from '@/shared/lib/graph-relationship-labels'
 
 export type ImportantDate = {
   label: string
@@ -31,24 +36,33 @@ export type Person = {
 
 type PeopleState = {
   people: Person[]
+  /** Direct graph edge from designated self → this person (Connections), keyed by person id. */
+  graphEdgeToSelfByPersonId: Record<string, GraphEdgeToSelf>
   isLoading: boolean
 }
 
 type PeopleActions = {
   loadPeople: () => Promise<void>
-  addPerson: (input: { name: string; relationship?: string; notes?: string }) => Promise<Person>
+  addPerson: (input: { name: string }) => Promise<Person>
   removePerson: (id: string) => Promise<boolean>
 }
 
 export const usePeopleStore = create<PeopleState & PeopleActions>((set) => ({
   people: [],
+  graphEdgeToSelfByPersonId: {},
   isLoading: false,
 
   loadPeople: async () => {
     set({ isLoading: true })
     try {
-      const people = await window.emoryApi.db.people.findAll()
-      set({ people, isLoading: false })
+      const [people, self, rels] = await Promise.all([
+        window.emoryApi.db.people.findAll(),
+        window.emoryApi.db.people.getSelf(),
+        window.emoryApi.db.relationships.getAll(),
+      ])
+      const rows = rels as RelationshipEndpointRow[]
+      const graphEdgeToSelfByPersonId = buildGraphEdgesToSelf(self as { id: string } | null, rows)
+      set({ people, graphEdgeToSelfByPersonId, isLoading: false })
     } catch {
       set({ isLoading: false })
       toast.error('Failed to load people')

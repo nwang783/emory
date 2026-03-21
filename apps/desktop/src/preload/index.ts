@@ -158,7 +158,16 @@ const emoryApi = {
       instanceId: string
     }> => ipcRenderer.invoke('remote-ingest:get-config'),
 
-    getStatus: () => ipcRenderer.invoke('remote-ingest:get-status'),
+    getStatus: (): Promise<{
+      listening: boolean
+      effectiveHost: string | null
+      effectiveAddresses: string[]
+      signalingPort: number
+      beaconActive: boolean
+      lastError: string | null
+      instanceId: string
+      tailscaleHint: string | null
+    }> => ipcRenderer.invoke('remote-ingest:get-status'),
 
     apply: (payload: {
       enabled?: boolean
@@ -169,6 +178,40 @@ const emoryApi = {
       mdnsEnabled?: boolean
       friendlyName?: string
     }) => ipcRenderer.invoke('remote-ingest:apply', payload),
+
+    onUpdated: (
+      handler: (payload: {
+        config: {
+          enabled: boolean
+          bindMode: 'all' | 'loopback' | 'tailscale'
+          signalingPort: number
+          beaconEnabled: boolean
+          beaconIntervalMs: number
+          mdnsEnabled: boolean
+          friendlyName: string
+        }
+        instanceId: string
+        status: {
+          listening: boolean
+          effectiveHost: string | null
+          effectiveAddresses: string[]
+          signalingPort: number
+          beaconActive: boolean
+          lastError: string | null
+          instanceId: string
+          tailscaleHint: string | null
+        }
+      }) => void,
+    ): (() => void) => {
+      const channel = 'remote-ingest:updated'
+      const fn = (_evt: Electron.IpcRendererEvent, p: unknown): void => {
+        handler(p as Parameters<typeof handler>[0])
+      }
+      ipcRenderer.on(channel, fn)
+      return () => {
+        ipcRenderer.removeListener(channel, fn)
+      }
+    },
   },
 
   tts: {

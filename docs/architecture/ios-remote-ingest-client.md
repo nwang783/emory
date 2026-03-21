@@ -48,10 +48,11 @@ Host: {host}
 {
   "ok": true,
   "service": "emory-ingest",
-  "protoVersion": 1,
+  "protoVersion": 2,
   "instanceId": "uuid-string",
   "friendlyName": "Emory home",
-  "signalingPort": 18763
+  "signalingPort": 18763,
+  "wsIngestPath": "/ingest"
 }
 ```
 
@@ -59,7 +60,8 @@ Host: {host}
 |-------|------|------------|
 | `ok` | boolean | Must be `true` |
 | `service` | string | Expect `"emory-ingest"` |
-| `protoVersion` | number | **1** today; if newer, decide whether to proceed or show “update app” |
+| `protoVersion` | number | **2** when desktop ships WS ingest; **1** = health only. If newer, decide whether to proceed or show “update app” |
+| `wsIngestPath` | string (optional) | WebSocket path on **same TCP port** as HTTP (e.g. `/ingest`) |
 | `instanceId` | string | Stable server identity; dedupe discovery list |
 | `friendlyName` | string | Display label |
 | `signalingPort` | number | Should match requested port; use for later WSS on same port unless spec changes |
@@ -123,22 +125,16 @@ Desktop **Copy connection details** (Settings) pastes URLs like `http://100.x.y.
 
 ---
 
-## Phase 1+ — Not implemented on desktop yet (contract placeholders)
+## Phase 1 — WebSocket video ingest (implemented on desktop)
 
-Coordinate with desktop changes before relying on these in production.
+- **URL:** `ws://{host}:{signalingPort}/ingest` — same port as `GET /health`.
+- **Publisher (phone):** connect without `role` or with `?role=publisher`. Send **binary** messages: **`MSG_VIDEO_FRAME`** (JPEG + JSON metadata header) per [`@emory/ingest-protocol`](../../packages/ingest-protocol/) (aligned with `apps/bridge-server`).
+- **Viewer:** desktop Camera tab uses `?role=viewer`; the server relays publisher frames to all viewers.
+- **Security:** still **tailnet / trusted LAN** only until pairing exists.
 
-### WebSocket signaling (planned)
+### WebRTC (later)
 
-- **WSS** `wss://{host}:{port}/signaling` (path TBD) — JSON messages for SDP/ICE, pairing.
-- **Pairing:** short code or QR → **session token** → `Authorization: Bearer …` on WSS.
-
-### WebRTC (planned)
-
-- **Phone** publishes **video + audio** tracks; **PC** is **receiver**.
-- Likely **one `RTCPeerConnection`**, **Data Channel** for PC → phone cues.
-- Native stack: **Google WebRTC** (Swift package) or vendor SDK; **Electron** side needs a **native WebRTC** peer (separate task).
-
-When desktop ships signaling, update this doc with **message schemas** and **state machine** (connecting → paired → streaming → reconnect).
+Optional lower-latency path; not required for the JPEG WebSocket pipeline above.
 
 ---
 
@@ -178,6 +174,7 @@ Keep **Meta wearables** pipeline (`StreamViewModel`, `RealMetaWearablesService`)
 
 - [remote-ingest-tailscale.md](./remote-ingest-tailscale.md) — server topology, bind modes, persistence file name.
 - [remote-discovery.md](./remote-discovery.md) — beacon packet format.
+- [remote-camera-desktop-plan.md](./remote-camera-desktop-plan.md) — **desktop UI + ingest server:** show phone/Ray-Ban feed in Camera tab when ingest is on (WS + JPEG v1, WebRTC later).
 - [conversation-recording.md](./conversation-recording.md) — end state: remote audio should feed the same pipeline as local mic (future).
 
 ## Changelog

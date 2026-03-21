@@ -16,11 +16,12 @@ Payload: **UTF-8 JSON**, sent periodically (default **2000 ms** when enabled in 
 ```json
 {
   "service": "emory-ingest",
-  "protoVersion": 1,
+  "protoVersion": 2,
   "instanceId": "<uuid>",
   "friendlyName": "Emory home",
   "signalingPort": 18763,
   "httpHealthPath": "/health",
+  "wsIngestPath": "/ingest",
   "bindHostAdvertised": "100.x.y.z"
 }
 ```

@@ -1,7 +1,16 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import type { RemoteIngestSettingsService } from '../services/remote-ingest-settings.service.js'
 import type { RemoteIngestServerService } from '../services/remote-ingest-server.service.js'
-import type { RemoteIngestConfig } from '../services/remote-ingest.types.js'
+import type { RemoteIngestPersisted } from '../services/remote-ingest-settings.service.js'
+import type { RemoteIngestConfig, RemoteIngestStatus } from '../services/remote-ingest.types.js'
+
+function broadcastRemoteIngestUpdated(persisted: RemoteIngestPersisted, status: RemoteIngestStatus): void {
+  const { instanceId, ...config } = persisted
+  const payload = { config, instanceId, status }
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('remote-ingest:updated', payload)
+  }
+}
 
 function isBindMode(v: unknown): v is RemoteIngestConfig['bindMode'] {
   return v === 'all' || v === 'loopback' || v === 'tailscale'
@@ -39,6 +48,7 @@ export function registerRemoteIngestIpc(
     try {
       const next = await settings.save(patch)
       const status = await server.apply(next)
+      broadcastRemoteIngestUpdated(next, status)
       return {
         success: true as const,
         config: {

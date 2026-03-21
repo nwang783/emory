@@ -341,6 +341,8 @@ export type PersonMemory = {
   id: string
   personId: string
   recordingId: string | null
+  /** When set, this row was derived from a Connections graph edge (FK → relationships). */
+  relationshipId: string | null
   memoryText: string
   memoryType: MemoryType
   memoryDate: string
@@ -353,6 +355,7 @@ export type PersonMemoryRow = {
   id: string
   person_id: string
   recording_id: string | null
+  relationship_id: string | null
   memory_text: string
   memory_type: string
   memory_date: string
@@ -364,6 +367,7 @@ export type PersonMemoryRow = {
 export type CreatePersonMemoryInput = {
   personId: string
   recordingId?: string | null
+  relationshipId?: string | null
   memoryText: string
   memoryType: MemoryType
   memoryDate: string

@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import { SqliteAdapter, ConversationRepository, PeopleRepository } from '@emory/db'
+import { SqliteAdapter, ConversationRepository, PeopleRepository, RelationshipRepository } from '@emory/db'
 import { DeepgramService } from '../src/main/services/deepgram.service.js'
 import { loadEnvironment } from '../src/main/services/env.service.js'
 import { MemoryAnswerService } from '../src/main/services/memory-answer.service.js'
@@ -76,12 +76,14 @@ async function main(): Promise<void> {
 
   const peopleRepo = new PeopleRepository(adapter)
   const conversationRepo = new ConversationRepository(adapter)
+  const relationshipRepo = new RelationshipRepository(adapter)
   const deepgramService = new DeepgramService()
   const understandingService = new MemoryQueryUnderstandingService()
   const answerService = new MemoryAnswerService()
   const queryService = new MemoryQueryService(
     conversationRepo,
     peopleRepo,
+    relationshipRepo,
     deepgramService,
     understandingService,
     answerService,

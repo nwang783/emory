@@ -1,6 +1,17 @@
-import type { ConversationRecording, ConversationRepository, PeopleRepository, Person, PersonMemory } from '@emory/db'
+import type {
+  ConversationRecording,
+  ConversationRepository,
+  PeopleRepository,
+  Person,
+  PersonMemory,
+  RelationshipRepository,
+} from '@emory/db'
 import { DeepgramService } from './deepgram.service.js'
-import { MemoryAnswerService, type MemoryAnswerResult } from './memory-answer.service.js'
+import {
+  MemoryAnswerService,
+  type MatchedGraphRelationship,
+  type MemoryAnswerResult,
+} from './memory-answer.service.js'
 import {
   MemoryQueryUnderstandingService,
   type MemoryQueryPlan,
@@ -21,6 +32,7 @@ export type QueryMemoriesResult = {
   queryTranscript: string
   plan: MemoryQueryPlan
   matchedPeople: Person[]
+  matchedGraphRelationships: MatchedGraphRelationship[]
   matchedMemories: PersonMemory[]
   matchedRecordings: ConversationRecording[]
   answer: MemoryAnswerResult
@@ -85,6 +97,7 @@ export class MemoryQueryService {
   constructor(
     private conversationRepo: ConversationRepository,
     private peopleRepo: PeopleRepository,
+    private relationshipRepo: RelationshipRepository,
     private deepgramService: DeepgramService,
     private understandingService: MemoryQueryUnderstandingService,
     private answerService: MemoryAnswerService,
@@ -140,6 +153,7 @@ export class MemoryQueryService {
     })
 
     const matchedPeople = this.resolveMatchedPeople(plan, selfPerson)
+    const matchedGraphRelationships = this.resolveMatchedGraphRelationships(selfPerson, matchedPeople)
     const matchedMemories = this.resolveMatchedMemories(plan, selfPerson, matchedPeople)
     const matchedRecordings = this.resolveMatchedRecordings(plan, selfPerson, matchedPeople)
     console.log('[memory-query] retrieval complete', {
@@ -158,6 +172,7 @@ export class MemoryQueryService {
       matchedPeople,
       matchedMemories,
       matchedRecordings,
+      matchedGraphRelationships,
     })
 
     console.log('[memory-query] answer complete', {
@@ -170,6 +185,7 @@ export class MemoryQueryService {
       queryTranscript: queryText,
       plan,
       matchedPeople,
+      matchedGraphRelationships,
       matchedMemories,
       matchedRecordings,
       answer,
@@ -190,14 +206,36 @@ export class MemoryQueryService {
     return uniquePeople(people)
   }
 
+  private resolveMatchedGraphRelationships(
+    selfPerson: Person | null,
+    matchedPeople: Person[],
+  ): MatchedGraphRelationship[] {
+    if (!selfPerson) return []
+
+    const out: MatchedGraphRelationship[] = []
+    for (const person of matchedPeople) {
+      if (person.id === selfPerson.id) continue
+      const rel = this.relationshipRepo.findBetween(selfPerson.id, person.id)
+      if (!rel) continue
+      out.push({
+        otherPersonId: person.id,
+        otherPersonName: person.name,
+        relationshipType: rel.relationshipType,
+        notes: rel.notes,
+      })
+    }
+    return out
+  }
+
   private resolveMatchedMemories(plan: MemoryQueryPlan, selfPerson: Person | null, matchedPeople: Person[]): PersonMemory[] {
     const personIds = matchedPeople.map((person) => person.id)
     const memories: PersonMemory[] = []
 
     if (personIds.length > 0) {
       for (const personId of personIds) {
-        memories.push(...this.conversationRepo.getMemoriesByPerson(personId, 8))
+        memories.push(...this.conversationRepo.getMemoriesByPerson(personId, 12))
       }
+      memories.push(...this.conversationRepo.getRelationshipMemoriesForPersonIds(personIds))
     } else if (plan.personScope === 'self' && selfPerson) {
       memories.push(...this.conversationRepo.getMemoriesByPerson(selfPerson.id, 8))
     } else {

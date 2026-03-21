@@ -47,7 +47,7 @@ To know “who” for a file, join **`conversation_recordings`** → **`people`*
 
 See [`docs/packages/db.md`](../packages/db.md) — tables **`conversation_recordings`** and **`person_memories`**, plus indexes. Recordings use **`transcript_raw_text`**, **`extraction_json`**, **`extraction_status`**, and **`extraction_error`**. Memories use **`memory_type`**, **`confidence`**, **`source_quote`**.
 
-**Upgrading from an older local DB** that used `transcript_text` / `parse_status` / `source_type`: SQLite migration v6 in this repo targets the new column set. If your file was created by the previous schema, delete `emory.db` under app userData or add a one-off migration — the app does not auto-migrate between those two v6 variants.
+**Upgrading from an older local DB** that used `transcript_text` / `parse_status` / `source_type`: run the current app once so SQLite migrations apply — **v9** rebuilds `conversation_recordings` into the canonical column set (mapping those legacy names into `transcript_raw_text` / `transcript_status` / `transcript_provider` where needed). If migration still fails, delete `emory.db` under app userData as a last resort.
 
 ## IPC
 

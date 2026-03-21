@@ -4,7 +4,11 @@
     "outDir": "./out",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "baseUrl": ".",
+    "paths": {
+      "@emory/ingest-protocol": ["../../packages/ingest-protocol/src/index.ts"]
+    }
   },
   "include": ["src/main/**/*", "src/preload/**/*", "electron.vite.config.ts"]
 }
