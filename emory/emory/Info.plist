@@ -58,5 +58,8 @@
 
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app uses the microphone to capture audio for real-time AI processing alongside video from your Meta glasses.</string>
+
+	<key>UILaunchScreen</key>
+	<dict/>
 </dict>
 </plist>
