@@ -9,6 +9,10 @@ import { registerUnknownIpc } from './ipc/unknown.ipc.js'
 import { registerConversationIpc } from './ipc/conversation.ipc.js'
 import { CleanupService } from './services/cleanup.service.js'
 import { getConversationsRootDir } from './services/conversation-storage.service.js'
+import { DeepgramService } from './services/deepgram.service.js'
+import { MemoryExtractionService } from './services/memory-extraction.service.js'
+import { ConversationProcessingService } from './services/conversation-processing.service.js'
+import { loadEnvironment } from './services/env.service.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -47,6 +51,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  loadEnvironment()
   electronApp.setAppUserModelId('com.emory.desktop')
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -78,12 +83,26 @@ app.whenReady().then(() => {
 
   const cleanupService = new CleanupService(retentionRepo, encounterRepo, unknownRepo)
   cleanupService.start()
+  const deepgramService = new DeepgramService()
+  const memoryExtractionService = new MemoryExtractionService()
+  const conversationProcessingService = new ConversationProcessingService(
+    conversationRepo,
+    peopleRepo,
+    deepgramService,
+    memoryExtractionService,
+  )
 
   const mainWindow = createWindow()
   registerFaceIpc(mainWindow, getModelsDir(), peopleRepo)
   registerEncounterIpc(mainWindow, encounterRepo)
   registerUnknownIpc(mainWindow, unknownRepo)
-  registerConversationIpc(conversationRepo, encounterRepo)
+  registerConversationIpc(
+    mainWindow,
+    conversationProcessingService,
+    conversationRepo,
+    encounterRepo,
+    peopleRepo,
+  )
 
   app.on('before-quit', () => {
     cleanupService.stop()

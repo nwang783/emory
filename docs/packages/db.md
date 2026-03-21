@@ -245,19 +245,20 @@ Source row per captured audio segment: file path on disk, person link, optional 
 | `audio_path` | TEXT | NOT NULL (absolute path under userData) |
 | `mime_type` | TEXT | NOT NULL |
 | `duration_ms` | INTEGER | |
-| `transcript_text` | TEXT | |
+| `transcript_raw_text` | TEXT | STT output (e.g. Deepgram) |
+| `transcript_provider` | TEXT | e.g. `deepgram` |
 | `transcript_status` | TEXT | NOT NULL: `pending` \| `complete` \| `failed` |
-| `transcript_provider` | TEXT | |
 | `transcript_error` | TEXT | STT failure detail |
-| `parse_status` | TEXT | NOT NULL: `pending` \| `complete` \| `failed` |
-| `parse_error` | TEXT | Memory-parse failure detail |
+| `extraction_status` | TEXT | NOT NULL: `pending` \| `complete` \| `failed` |
+| `extraction_json` | TEXT | Serialized **`MemoryExtractionResult`** (summary + memories + uncertain items) |
+| `extraction_error` | TEXT | LLM / extraction failure detail |
 | `created_at` / `updated_at` | TEXT | NOT NULL |
 
 **Indexes:** `idx_conversation_recordings_person_id`, `idx_conversation_recordings_recorded_at`, `idx_conversation_recordings_person_recorded_at`.
 
 #### `person_memories`
 
-Short memory lines derived from transcripts (populated when the parse pipeline exists).
+Short memory lines derived from transcripts (populated by desktop **`MemoryExtractionService`** after STT).
 
 | Column | Type | Notes |
 |--------|------|--------|
@@ -265,8 +266,10 @@ Short memory lines derived from transcripts (populated when the parse pipeline e
 | `person_id` | TEXT | NOT NULL, FK → `people(id)` ON DELETE CASCADE |
 | `recording_id` | TEXT | FK → `conversation_recordings(id)` ON DELETE SET NULL |
 | `memory_text` | TEXT | NOT NULL |
+| `memory_type` | TEXT | NOT NULL: `fact` \| `preference` \| `event` \| … (see **`MemoryType`**) |
 | `memory_date` | TEXT | NOT NULL |
-| `source_type` | TEXT | NOT NULL (e.g. `conversation`) |
+| `confidence` | REAL | Optional model confidence |
+| `source_quote` | TEXT | Optional supporting quote from transcript |
 | `created_at` | TEXT | NOT NULL |
 
 **Indexes:** `idx_person_memories_person_id`, `idx_person_memories_memory_date`, `idx_person_memories_person_memory_date`.

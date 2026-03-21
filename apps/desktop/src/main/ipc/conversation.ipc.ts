@@ -1,7 +1,16 @@
 import { ipcMain } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { randomUUID } from 'node:crypto'
-import type { ConversationRecording, ConversationRepository, EncounterRepository } from '@emory/db'
+import type {
+  ConversationRecording,
+  ConversationRepository,
+  EncounterRepository,
+  PeopleRepository,
+  PersonMemory,
+} from '@emory/db'
 import { ConversationStorageService } from '../services/conversation-storage.service.js'
+import type { ConversationProcessingService } from '../services/conversation-processing.service.js'
+import type { ProcessRecordingInput } from '../services/conversation-processing.service.js'
 import { getActiveSessionId } from './encounter.ipc.js'
 
 type SaveAndProcessPayload = {
@@ -12,7 +21,12 @@ type SaveAndProcessPayload = {
   audioBytes: Uint8Array
 }
 
-type SaveAndProcessSuccess = { success: true; recording: ConversationRecording }
+type SaveAndProcessSuccess = {
+  success: true
+  recording: ConversationRecording
+  memories: PersonMemory[]
+}
+
 type SaveAndProcessFailure = { success: false; error: string }
 
 function toUint8Array(value: unknown): Uint8Array | null {
@@ -28,8 +42,11 @@ function toUint8Array(value: unknown): Uint8Array | null {
 }
 
 export function registerConversationIpc(
+  _mainWindow: BrowserWindow,
+  processingService: ConversationProcessingService,
   conversationRepo: ConversationRepository,
   encounterRepo: EncounterRepository,
+  peopleRepo: PeopleRepository,
 ): void {
   const storage = new ConversationStorageService()
 
@@ -56,6 +73,10 @@ export function registerConversationIpc(
         return { success: false, error: 'audioBytes is required' }
       }
 
+      if (!peopleRepo.findById(p.personId)) {
+        return { success: false, error: 'Person not found' }
+      }
+
       const recordedAtDate = new Date(p.recordedAt)
       if (Number.isNaN(recordedAtDate.getTime())) {
         return { success: false, error: 'recordedAt must be a valid ISO date string' }
@@ -80,34 +101,60 @@ export function registerConversationIpc(
         return { success: false, error: `Failed to save audio: ${message}` }
       }
 
-      try {
-        let encounterId: string | null = null
-        const sessionId = getActiveSessionId()
-        if (sessionId) {
-          const active = encounterRepo.findActiveEncounter(p.personId, sessionId)
-          encounterId = active?.id ?? null
-        }
+      let encounterId: string | null = null
+      const sessionId = getActiveSessionId()
+      if (sessionId) {
+        const active = encounterRepo.findActiveEncounter(p.personId, sessionId)
+        encounterId = active?.id ?? null
+      }
 
+      let createdRecordingId: string | null = null
+      try {
         const recording = conversationRepo.createRecording({
           id: recordingId,
           personId: p.personId,
           encounterId,
           recordedAt: p.recordedAt,
-          audioPath,
+          audioPath: audioPath!,
           mimeType: p.mimeType,
           durationMs,
         })
+        createdRecordingId = recording.id
 
-        return { success: true, recording }
+        const processInput: ProcessRecordingInput = {
+          recordingId: recording.id,
+          personId: p.personId,
+          encounterId,
+          audioPath: audioPath!,
+          mimeType: p.mimeType,
+          durationMs,
+          recordedAt: p.recordedAt,
+        }
+
+        const result = await processingService.processRecording(processInput)
+        return { success: true, recording: result.recording, memories: result.memories }
       } catch (err) {
+        if (createdRecordingId) {
+          conversationRepo.deleteRecordingById(createdRecordingId)
+        }
         if (audioPath) {
           await storage.removeFile(audioPath)
         }
         const message = err instanceof Error ? err.message : String(err)
-        return { success: false, error: `Failed to create recording row: ${message}` }
+        return { success: false, error: `Failed to process recording: ${message}` }
       }
     },
   )
+
+  ipcMain.handle('conversation:process-recording', async (_event, input: ProcessRecordingInput) => {
+    try {
+      const result = await processingService.processRecording(input)
+      return { success: true, ...result }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
+    }
+  })
 
   ipcMain.handle('conversation:get-recordings-by-person', (_event, personId: string, limit?: number) => {
     if (typeof personId !== 'string' || personId.length === 0) return []

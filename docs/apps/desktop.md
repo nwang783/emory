@@ -325,15 +325,17 @@ Session state is managed in-process: `encounter:start-session` stores the active
 
 | Channel | Direction | Payload | Returns |
 |---|---|---|---|
-| `conversation:save-and-process` | Renderer → Main | `{ personId, recordedAt, mimeType, durationMs?, audioBytes }` | `{ success: true, recording }` or `{ success: false, error }` |
+| `conversation:save-and-process` | Renderer → Main | `{ personId, recordedAt, mimeType, durationMs?, audioBytes }` | `{ success: true, recording, memories }` or `{ success: false, error }` |
+| `conversation:process-recording` | Renderer → Main | `ProcessRecordingInput` (optional `recordingId` if row exists) | `{ success: true, recording, memories }` or `{ success: false, error }` |
 | `conversation:get-recordings-by-person` | Renderer → Main | `personId, limit?` | `ConversationRecording[]` |
 | `conversation:get-memories-by-person` | Renderer → Main | `personId, limit?` | `PersonMemory[]` |
 
-`save-and-process` writes the file first, then inserts the DB row. If the insert fails, the file is removed. `encounter_id` is resolved from the active session when possible (see `getActiveSessionId` in `encounter.ipc.ts`). Transcript and parse steps are **not** run in this slice; statuses start as **`pending`**.
+`save-and-process` writes the file, inserts the DB row, then runs **Deepgram transcription** and **memory extraction** (`ConversationProcessingService`). On failure after the row is created, the row is deleted and the file is removed. `encounter_id` is resolved from the active session when possible (see `getActiveSessionId` in `encounter.ipc.ts`).
 
 | Preload method | Maps to |
 |---|---|
 | `emoryApi.conversation.saveAndProcess(input)` | `conversation:save-and-process` (`audioBytes` as `ArrayBuffer` → `Uint8Array` in preload) |
+| `emoryApi.conversation.processRecording(input)` | `conversation:process-recording` |
 | `emoryApi.conversation.getRecordingsByPerson(personId, limit?)` | `conversation:get-recordings-by-person` |
 | `emoryApi.conversation.getMemoriesByPerson(personId, limit?)` | `conversation:get-memories-by-person` |
 

@@ -2,7 +2,7 @@
 
 This document describes the **first slice** of the conversation memory pipeline: automatic microphone capture when a **recognised** person is primary in the camera feed, persisting audio on disk with a SQLite row keyed by `person_id`, optional `encounter_id`, and timestamps.
 
-Full STT / LLM memory extraction is **out of scope** here; rows are created with `transcript_status` and `parse_status` both **`pending`** until a later processing step updates them.
+After each segment is saved, main runs **`ConversationProcessingService`**: Deepgram transcribes the file (`transcript_raw_text`, `transcript_status`), then **`MemoryExtractionService`** fills `extraction_json` and inserts **`person_memories`** rows for high-confidence target-person items. Env keys live in `.env.example` (Deepgram + extraction model).
 
 ## Layers
 
@@ -10,9 +10,10 @@ Full STT / LLM memory extraction is **out of scope** here; rows are created with
 |--------|-----------|------|
 | Renderer state machine | [`useConversationRecorder.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useConversationRecorder.ts) | Mic stream, `MediaRecorder`, start/stop debouncing, frozen `personId` per segment |
 | Primary subject rule | [`primarySubject.ts`](../../apps/desktop/src/renderer/modules/camera/lib/primarySubject.ts) | Among tracks with locked `identity`, pick **largest bbox area**; tie-break **higher similarity** |
-| IPC | [`conversation.ipc.ts`](../../apps/desktop/src/main/ipc/conversation.ipc.ts) | Validate payload, write file, insert DB row; resolve `encounter_id` from active session |
+| IPC | [`conversation.ipc.ts`](../../apps/desktop/src/main/ipc/conversation.ipc.ts) | Validate payload, write file, `createRecording` with stable id, then `processRecording` (Deepgram → extraction → memories); resolve `encounter_id` from active session |
 | File I/O | [`conversation-storage.service.ts`](../../apps/desktop/src/main/services/conversation-storage.service.ts) | `<userData>/conversations/YYYY/MM/<recordingId>.<ext>` |
-| Persistence | [`ConversationRepository`](../../packages/db/src/repositories/conversation.repository.ts) | `conversation_recordings` + `person_memories` (memories unused until parse pipeline lands) |
+| Persistence | [`ConversationRepository`](../../packages/db/src/repositories/conversation.repository.ts) | `conversation_recordings` (`transcript_*`, `extraction_*`) + `person_memories` |
+| STT / extraction | [`conversation-processing.service.ts`](../../apps/desktop/src/main/services/conversation-processing.service.ts) | Orchestrates [`deepgram.service.ts`](../../apps/desktop/src/main/services/deepgram.service.ts) and [`memory-extraction.service.ts`](../../apps/desktop/src/main/services/memory-extraction.service.ts) |
 
 ## Behaviour (decisions)
 
@@ -44,15 +45,18 @@ To know “who” for a file, join **`conversation_recordings`** → **`people`*
 
 ## Schema (v6)
 
-See [`docs/packages/db.md`](../packages/db.md) — tables **`conversation_recordings`** and **`person_memories`**, plus indexes. An extra **`transcript_error`** column stores STT failure messages without overloading `parse_error`.
+See [`docs/packages/db.md`](../packages/db.md) — tables **`conversation_recordings`** and **`person_memories`**, plus indexes. Recordings use **`transcript_raw_text`**, **`extraction_json`**, **`extraction_status`**, and **`extraction_error`**. Memories use **`memory_type`**, **`confidence`**, **`source_quote`**.
+
+**Upgrading from an older local DB** that used `transcript_text` / `parse_status` / `source_type`: SQLite migration v6 in this repo targets the new column set. If your file was created by the previous schema, delete `emory.db` under app userData or add a one-off migration — the app does not auto-migrate between those two v6 variants.
 
 ## IPC
 
 | Channel | Purpose |
 |---------|---------|
-| `conversation:save-and-process` | Save bytes to disk + `createRecording` (processing stub: statuses remain `pending`) |
+| `conversation:save-and-process` | Save bytes to disk, `createRecording`, run full Deepgram → memory pipeline; returns `{ recording, memories }` on success |
+| `conversation:process-recording` | Same pipeline for an existing file path (e.g. CLI / manual scripts); optional `recordingId` if the row already exists |
 | `conversation:get-recordings-by-person` | List recordings for a person |
-| `conversation:get-memories-by-person` | List distilled memories (empty until parse pipeline inserts rows) |
+| `conversation:get-memories-by-person` | List distilled memories |
 
 Preload: `window.emoryApi.conversation.*`.
 

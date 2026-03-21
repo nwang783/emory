@@ -9,6 +9,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
+    "manual:process-recording": "vite-node scripts/process-manual-recording.ts",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "@emory/core": "workspace:*",
     "@emory/db": "workspace:*",
     "better-sqlite3": "^11",
+    "dotenv": "^16.6.1",
     "onnxruntime-node": "^1.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

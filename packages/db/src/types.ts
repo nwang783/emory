@@ -223,89 +223,6 @@ export type PersonProfile = {
   lastTopics: string[]
 }
 
-// --- Conversation recording & memory types ---
-
-export type TranscriptStatus = 'pending' | 'complete' | 'failed'
-
-export type ParseStatus = 'pending' | 'complete' | 'failed'
-
-export type MemorySourceType = 'conversation'
-
-export type ConversationRecording = {
-  id: string
-  personId: string
-  encounterId: string | null
-  recordedAt: string
-  audioPath: string
-  mimeType: string
-  durationMs: number | null
-  transcriptText: string | null
-  transcriptStatus: TranscriptStatus
-  transcriptProvider: string | null
-  transcriptError: string | null
-  parseStatus: ParseStatus
-  parseError: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export type ConversationRecordingRow = {
-  id: string
-  person_id: string
-  encounter_id: string | null
-  recorded_at: string
-  audio_path: string
-  mime_type: string
-  duration_ms: number | null
-  transcript_text: string | null
-  transcript_status: string
-  transcript_provider: string | null
-  transcript_error: string | null
-  parse_status: string
-  parse_error: string | null
-  created_at: string
-  updated_at: string
-}
-
-export type PersonMemory = {
-  id: string
-  personId: string
-  recordingId: string | null
-  memoryText: string
-  memoryDate: string
-  sourceType: MemorySourceType
-  createdAt: string
-}
-
-export type PersonMemoryRow = {
-  id: string
-  person_id: string
-  recording_id: string | null
-  memory_text: string
-  memory_date: string
-  source_type: string
-  created_at: string
-}
-
-export type CreateConversationRecordingInput = {
-  /** When set (e.g. by main before writing the file), must match the filename id. */
-  id?: string
-  personId: string
-  encounterId?: string | null
-  recordedAt: string
-  audioPath: string
-  mimeType: string
-  durationMs?: number | null
-}
-
-export type AddPersonMemoryInput = {
-  personId: string
-  recordingId?: string | null
-  memoryText: string
-  memoryDate: string
-  sourceType: MemorySourceType
-}
-
 // --- Retention config types ---
 
 export type RetentionConfig = {
@@ -341,4 +258,112 @@ export type GradedIdentity = {
   personName: string | null
   similarity: number
   matchMargin: number
+}
+
+// --- Conversation recording & memory types ---
+
+export type TranscriptStatus = 'pending' | 'complete' | 'failed'
+
+export type ExtractionStatus = 'pending' | 'complete' | 'failed'
+
+export type MemoryType = 'fact' | 'preference' | 'event' | 'relationship' | 'health' | 'routine' | 'other'
+
+export type AppliesToPerson = 'target_person' | 'self_person' | 'unknown'
+
+export type ExtractedMemory = {
+  memoryText: string
+  memoryType: MemoryType
+  memoryDate: string
+  confidence: number | null
+  sourceQuote: string | null
+  appliesToPerson: AppliesToPerson
+}
+
+export type MemoryExtractionResult = {
+  summary: string
+  memories: ExtractedMemory[]
+  uncertainItems: Array<{ text: string; reason: string }>
+}
+
+export type ConversationRecording = {
+  id: string
+  personId: string
+  encounterId: string | null
+  recordedAt: string
+  audioPath: string
+  mimeType: string
+  durationMs: number | null
+  transcriptRawText: string | null
+  transcriptProvider: string | null
+  transcriptStatus: TranscriptStatus
+  transcriptError: string | null
+  extractionStatus: ExtractionStatus
+  extractionJson: MemoryExtractionResult | null
+  extractionError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type ConversationRecordingRow = {
+  id: string
+  person_id: string
+  encounter_id: string | null
+  recorded_at: string
+  audio_path: string
+  mime_type: string
+  duration_ms: number | null
+  transcript_raw_text: string | null
+  transcript_provider: string | null
+  transcript_status: string
+  transcript_error: string | null
+  extraction_status: string
+  extraction_json: string | null
+  extraction_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CreateConversationRecordingInput = {
+  /** When set (e.g. by main before writing the file), must match the on-disk filename id. */
+  id?: string
+  personId: string
+  encounterId?: string | null
+  recordedAt: string
+  audioPath: string
+  mimeType: string
+  durationMs?: number | null
+}
+
+export type PersonMemory = {
+  id: string
+  personId: string
+  recordingId: string | null
+  memoryText: string
+  memoryType: MemoryType
+  memoryDate: string
+  confidence: number | null
+  sourceQuote: string | null
+  createdAt: string
+}
+
+export type PersonMemoryRow = {
+  id: string
+  person_id: string
+  recording_id: string | null
+  memory_text: string
+  memory_type: string
+  memory_date: string
+  confidence: number | null
+  source_quote: string | null
+  created_at: string
+}
+
+export type CreatePersonMemoryInput = {
+  personId: string
+  recordingId?: string | null
+  memoryText: string
+  memoryType: MemoryType
+  memoryDate: string
+  confidence?: number | null
+  sourceQuote?: string | null
 }
