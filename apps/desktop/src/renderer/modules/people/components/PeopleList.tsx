@@ -8,20 +8,22 @@ import { PersonCard } from './PersonCard'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MiniSidebarPanel, PageHeader, PageShell, PageWorkspace } from '@/shared/components/PageLayout'
+import { cn } from '@/lib/utils'
 
 type PeopleListProps = {
   fullWidth?: boolean
 }
 
-function LoadingSkeleton(): React.JSX.Element {
+function LoadingSkeleton({ compact }: { compact: boolean }): React.JSX.Element {
   return (
-    <div className="space-y-3 p-3">
-      {Array.from({ length: 3 }).map((_, i) => (
+    <div className={cn('space-y-3', compact ? 'p-3' : 'px-6 py-5')}>
+      {Array.from({ length: compact ? 3 : 6 }).map((_, i) => (
         <div key={i} className="flex items-center gap-3 rounded-lg border border-border p-3">
           <Skeleton className="h-10 w-10 rounded-full" />
           <div className="flex-1 space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-20" />
           </div>
         </div>
       ))}
@@ -31,14 +33,14 @@ function LoadingSkeleton(): React.JSX.Element {
 
 function EmptyState(): React.JSX.Element {
   return (
-    <div className="flex flex-col items-center gap-3 px-4 py-16 text-center">
+    <div className="flex min-h-[min(45vh,360px)] flex-col items-center justify-center gap-3 px-4 py-12 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
         <UserRound className="h-7 w-7 text-muted-foreground" />
       </div>
       <div>
-        <p className="text-sm font-medium text-card-foreground">No people registered</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Add a person to start face recognition
+        <p className="text-sm font-medium text-foreground">No people yet</p>
+        <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+          Add someone to start recognition and memories.
         </p>
       </div>
     </div>
@@ -51,50 +53,84 @@ export function PeopleList({ fullWidth = false }: PeopleListProps): React.JSX.El
   const people = usePeopleStore((s) => s.people)
   const isLoading = usePeopleStore((s) => s.isLoading)
 
-  return (
-    <section className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-card-foreground">People</h2>
-        <Button size="sm" onClick={() => setShowRegister(true)}>
-          <Plus className="h-4 w-4" />
-          Add Person
-        </Button>
-      </header>
+  const addButton = (
+    <Button size="sm" onClick={() => setShowRegister(true)}>
+      <Plus className="h-4 w-4" />
+      Add person
+    </Button>
+  )
 
-      <ScrollArea className="flex-1">
-        {isLoading && <LoadingSkeleton />}
-        {!isLoading && people.length === 0 && <EmptyState />}
-        {!isLoading && people.length > 0 && (
-          <div
-            className={
-              fullWidth
-                ? 'grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3'
-                : 'flex flex-col gap-2 p-3'
-            }
-          >
-            {people.map((person) => (
-              <PersonCard
-                key={person.id}
-                person={person}
-                onEdit={() => setEditingPerson(person)}
-              />
-            ))}
+  return (
+    <PageShell>
+      <PageHeader
+        variant={fullWidth ? 'default' : 'compact'}
+        title="People"
+        description={
+          fullWidth
+            ? 'Profiles used for face recognition, relationships, and conversation memory.'
+            : undefined
+        }
+        actions={addButton}
+      />
+
+      {fullWidth ? (
+        <PageWorkspace
+          miniSidebar={
+            <MiniSidebarPanel label="Overview">
+              <p className="font-mono-ui text-2xl font-semibold tabular-nums text-foreground">
+                {isLoading ? '—' : people.length}
+              </p>
+              <p className="text-[11px] text-muted-foreground">People in directory</p>
+              <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+                Register faces from Camera, then edit names, “This is me,” and relationships here.
+              </p>
+            </MiniSidebarPanel>
+          }
+        >
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="mx-auto max-w-7xl px-5 py-5 sm:px-6">
+              {isLoading && <LoadingSkeleton compact={false} />}
+              {!isLoading && people.length === 0 && <EmptyState />}
+              {!isLoading && people.length > 0 && (
+                <ul className="grid list-none grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {people.map((person) => (
+                    <li key={person.id}>
+                      <PersonCard person={person} onEdit={() => setEditingPerson(person)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </ScrollArea>
+        </PageWorkspace>
+      ) : (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="p-3">
+            {isLoading && <LoadingSkeleton compact />}
+            {!isLoading && people.length === 0 && <EmptyState />}
+            {!isLoading && people.length > 0 && (
+              <ul className="flex list-none flex-col gap-2">
+                {people.map((person) => (
+                  <li key={person.id}>
+                    <PersonCard person={person} onEdit={() => setEditingPerson(person)} />
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      )}
 
       <RegisterFaceModal open={showRegister} onOpenChange={setShowRegister} />
       <EditPersonModal
         person={
-          editingPerson
-            ? people.find((p) => p.id === editingPerson.id) ?? editingPerson
-            : null
+          editingPerson ? (people.find((p) => p.id === editingPerson.id) ?? editingPerson) : null
         }
         open={editingPerson !== null}
         onOpenChange={(isOpen) => {
           if (!isOpen) setEditingPerson(null)
         }}
       />
-    </section>
+    </PageShell>
   )
 }

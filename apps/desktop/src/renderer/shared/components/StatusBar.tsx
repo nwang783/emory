@@ -26,63 +26,57 @@ export function StatusBar(): React.JSX.Element {
   const autoLearnEnabled = useSettingsStore((s) => s.autoLearnEnabled)
 
   return (
-    <footer className="flex items-center gap-3 border-t border-border bg-card px-4 py-1.5">
-      <Badge variant={STATUS_VARIANT[modelStatus]} className="text-[10px]">
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-border bg-muted/40 px-3 font-mono-ui text-xs text-muted-foreground">
+      <Badge variant={STATUS_VARIANT[modelStatus]} className="h-5 px-1.5 text-xs font-normal">
         {modelStatus}
       </Badge>
 
-      <Separator orientation="vertical" className="h-3.5" />
+      <Separator orientation="vertical" className="h-3" />
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {fpsCount} FPS
-          </span>
+          <span className="cursor-default tabular-nums">{fpsCount} FPS</span>
         </TooltipTrigger>
-        <TooltipContent>Detection frames per second</TooltipContent>
+        <TooltipContent className="text-xs">Frames per second</TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="h-3.5" />
+      <Separator orientation="vertical" className="h-3" />
 
-      <span className="text-[11px] tabular-nums text-muted-foreground">
+      <span className="tabular-nums">
         {detections.length} face{detections.length !== 1 ? 's' : ''}
       </span>
 
       {matches.length > 0 && (
         <>
-          <Separator orientation="vertical" className="h-3.5" />
-          <span className="text-[11px] tabular-nums text-emerald-400">
-            {matches.length} identified
-          </span>
+          <Separator orientation="vertical" className="h-3" />
+          <span className="tabular-nums text-foreground">{matches.length} identified</span>
         </>
       )}
 
-      <Separator orientation="vertical" className="h-3.5" />
+      <Separator orientation="vertical" className="h-3" />
 
-      <span className="text-[11px] tabular-nums text-muted-foreground">
-        {processingTimeMs.toFixed(0)}ms
-      </span>
+      <span className="tabular-nums">{processingTimeMs.toFixed(0)} ms</span>
 
-      {isProcessing && (
-        <span className="text-[10px] text-primary animate-pulse">identifying...</span>
-      )}
+      {isProcessing && <span className="text-foreground/80">Identifying…</span>}
 
       {autoLearnEnabled && autoLearnCount > 0 && (
         <>
-          <Separator orientation="vertical" className="h-3.5" />
+          <Separator orientation="vertical" className="h-3" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="text-[11px] tabular-nums text-blue-400">
+              <span className="cursor-default tabular-nums text-foreground/90">
                 {autoLearnCount} auto-learned
               </span>
             </TooltipTrigger>
-            <TooltipContent>Embeddings automatically captured at new angles</TooltipContent>
+            <TooltipContent className="max-w-xs text-xs">
+              New embeddings saved automatically at different angles
+            </TooltipContent>
           </Tooltip>
         </>
       )}
 
       {error && (
-        <span className="ml-auto truncate text-[11px] text-destructive" title={error}>
+        <span className="ml-auto max-w-[55%] truncate text-destructive" title={error}>
           {error}
         </span>
       )}

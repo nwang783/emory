@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Brain,
   Inbox,
+  LayoutList,
   Loader2,
   Pencil,
   Search,
@@ -13,7 +14,15 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  MiniSidebarNav,
+  type MiniSidebarNavItem,
+  PageHeader,
+  PageScroll,
+  PageShell,
+  PageToolbar,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 import {
   Select,
   SelectContent,
@@ -48,6 +57,11 @@ type PersonMemory = {
 }
 
 const MEMORY_TYPES: MemoryType[] = ['fact', 'preference', 'event', 'relationship', 'health', 'routine', 'other']
+
+const TYPE_SIDEBAR: MiniSidebarNavItem[] = [
+  { id: 'all', label: 'All types', icon: LayoutList },
+  ...MEMORY_TYPES.map((t) => ({ id: t, label: t })),
+]
 
 const TYPE_VARIANT: Record<MemoryType, 'default' | 'secondary' | 'outline'> = {
   fact: 'default',
@@ -294,10 +308,28 @@ export function MemoryBrowser(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [personFilter, setPersonFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | MemoryType>('all')
   const [editTarget, setEditTarget] = useState<PersonMemory | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<PersonMemory | null>(null)
 
   const personMap = new Map(people.map((p) => [p.id, p.name]))
+
+  const filteredMemories = useMemo(() => {
+    if (typeFilter === 'all') return memories
+    return memories.filter((m) => m.memoryType === typeFilter)
+  }, [memories, typeFilter])
+
+  const typeNavItems = useMemo(
+    () =>
+      TYPE_SIDEBAR.map((item) => {
+        if (item.id === 'all') {
+          return { ...item, badge: String(memories.length) }
+        }
+        const count = memories.filter((m) => m.memoryType === item.id).length
+        return { ...item, badge: String(count) }
+      }),
+    [memories],
+  )
 
   const loadMemories = useCallback(async () => {
     setIsLoading(true)
@@ -308,12 +340,9 @@ export function MemoryBrowser(): React.JSX.Element {
         searchText: searchText.trim() || null,
         limit: 200,
       }
-      console.log('[MemoryBrowser] searchMemories input:', searchInput)
       const result = await window.emoryApi.conversation.searchMemories(searchInput)
-      console.log('[MemoryBrowser] searchMemories result:', result, 'type:', typeof result, 'isArray:', Array.isArray(result))
       setMemories(result as PersonMemory[])
-    } catch (err) {
-      console.error('[MemoryBrowser] searchMemories error:', err)
+    } catch {
       toast.error('Failed to load memories')
     } finally {
       setIsLoading(false)
@@ -348,69 +377,97 @@ export function MemoryBrowser(): React.JSX.Element {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between px-6 pt-6 pb-3">
-        <h2 className="text-lg font-semibold tracking-tight">Memories</h2>
-        <span className="text-xs text-muted-foreground">
-          {memories.length} {memories.length === 1 ? 'memory' : 'memories'}
-        </span>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Memories"
+        description="From conversations and recordings"
+        actions={
+          !isLoading ? (
+            <span className="font-mono-ui text-xs text-muted-foreground tabular-nums">
+              {filteredMemories.length} shown · {memories.length} loaded
+            </span>
+          ) : null
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Search memories…"
-            className="pl-8 h-9"
-          />
-          {searchText && (
-            <button
-              type="button"
-              onClick={() => setSearchText('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+      <PageToolbar className="px-5 sm:px-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search memories…"
+              className="h-9 pl-8"
+            />
+            {searchText ? (
+              <button
+                type="button"
+                onClick={() => setSearchText('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+
+          <Select value={personFilter} onValueChange={setPersonFilter}>
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder="All people" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All people</SelectItem>
+              {people.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-
-        <Select value={personFilter} onValueChange={setPersonFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All people" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All people</SelectItem>
-            {people.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      </PageToolbar>
 
       {isLoading ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : memories.length === 0 ? (
-        <EmptyState />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6">
+          <EmptyState />
+        </div>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 px-3">
-          <div className="flex flex-col gap-0.5 pb-4">
-            {memories.map((memory) => (
-              <MemoryRow
-                key={memory.id}
-                memory={memory}
-                personName={personMap.get(memory.personId) ?? 'Unknown'}
-                onEdit={setEditTarget}
-                onDelete={setDeleteTarget}
-              />
-            ))}
-          </div>
-        </ScrollArea>
+        <PageWorkspace
+          miniSidebar={
+            <MiniSidebarNav
+              label="Memory type"
+              items={typeNavItems}
+              activeId={typeFilter}
+              onSelect={(id) => setTypeFilter(id as 'all' | MemoryType)}
+            />
+          }
+        >
+          {filteredMemories.length === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+              <p className="text-sm text-muted-foreground">No memories of this type.</p>
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => setTypeFilter('all')}>
+                Show all types
+              </Button>
+            </div>
+          ) : (
+            <PageScroll maxWidth="4xl" innerClassName="space-y-0.5 pb-8 pt-1">
+              {filteredMemories.map((memory) => (
+                <MemoryRow
+                  key={memory.id}
+                  memory={memory}
+                  personName={personMap.get(memory.personId) ?? 'Unknown'}
+                  onEdit={setEditTarget}
+                  onDelete={setDeleteTarget}
+                />
+              ))}
+            </PageScroll>
+          )}
+        </PageWorkspace>
       )}
 
       <EditMemoryDialog
@@ -426,6 +483,6 @@ export function MemoryBrowser(): React.JSX.Element {
         onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
         onConfirm={handleDelete}
       />
-    </section>
+    </PageShell>
   )
 }

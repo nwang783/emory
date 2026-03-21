@@ -21,6 +21,13 @@ import {
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { useSettingsStore } from '@/shared/stores/settings.store'
+import {
+  MiniSidebarPanel,
+  PageFill,
+  PageHeader,
+  PageShell,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 import { reachablePersonIdsFrom } from '../lib/ego-subgraph'
 
 type PersonNode = {
@@ -531,86 +538,111 @@ export function ConnectionsGraph(): React.JSX.Element {
 
   if (initialLoading) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-4">
-        <Skeleton className="h-64 w-64 rounded-full" />
-        <Skeleton className="h-5 w-40" />
-      </section>
+      <PageShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 py-12">
+          <Skeleton className="h-64 w-64 rounded-full" />
+          <Skeleton className="h-5 w-40" />
+        </div>
+      </PageShell>
     )
   }
 
   if (!hasPeopleInDirectory) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-3">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+      <PageShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">No people yet</p>
+            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+              Add people from the Camera or People tab to build a connection map.
+            </p>
+          </div>
         </div>
-        <p className="text-sm font-medium">No people registered yet</p>
-        <p className="text-xs text-muted-foreground">Add people from the Camera tab to see their connection web</p>
-      </section>
+      </PageShell>
     )
   }
 
   if (needsSelfSetup) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+      <PageShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div className="max-w-md space-y-2">
+            <p className="text-sm font-medium text-foreground">Mark who is you</p>
+            <p className="text-xs text-muted-foreground">
+              In People, edit your profile and enable{' '}
+              <span className="font-medium text-foreground">This is me</span>. The graph is built from you outward.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              useSettingsStore.getState().setActiveTab('people')
+            }}
+          >
+            Open People
+          </Button>
         </div>
-        <div className="max-w-sm space-y-2">
-          <p className="text-sm font-medium">Choose who is you</p>
-          <p className="text-xs text-muted-foreground">
-            Open People, edit a profile, and turn on <span className="font-medium text-foreground">This is me</span>.
-            Your connection web is built from you outward through relationships.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            useSettingsStore.getState().setActiveTab('people')
-          }}
-        >
-          Open People
-        </Button>
-      </section>
+      </PageShell>
     )
   }
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 pt-4 pb-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Connections</h2>
-          <p className="text-xs text-muted-foreground">
-            {nodeCount} in your network, {edgeCount} {edgeCount === 1 ? 'connection' : 'connections'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            {Object.entries(TYPE_COLOURS).map(([type, colour]) => (
-              <Badge key={type} variant="outline" className="gap-1 text-[9px]">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: colour }} />
-                {type}
-              </Badge>
-            ))}
-          </div>
+    <PageShell>
+      <PageHeader
+        title="Connections"
+        description={`${nodeCount} people · ${edgeCount} ${edgeCount === 1 ? 'link' : 'links'}`}
+        actions={
           <Button size="sm" onClick={() => setShowAddDialog(true)}>
             <Plus className="h-4 w-4" />
-            Add
+            Add relationship
           </Button>
-        </div>
-      </div>
+        }
+      />
 
-      <div ref={containerRef} className="relative flex-1 overflow-hidden border-t border-border">
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
-        />
-      </div>
+      <PageWorkspace
+        miniSidebar={
+          <MiniSidebarPanel label="Legend" position="end">
+            <div className="flex flex-col gap-1.5">
+              {Object.entries(TYPE_COLOURS).map(([type, colour]) => (
+                <Badge
+                  key={type}
+                  variant="outline"
+                  className="justify-start gap-2 py-1 text-[10px] font-normal"
+                >
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: colour }}
+                  />
+                  <span className="truncate">{type}</span>
+                </Badge>
+              ))}
+            </div>
+            <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+              Drag nodes to arrange. Scroll to zoom. Drag the canvas to pan.
+            </p>
+          </MiniSidebarPanel>
+        }
+      >
+        <PageFill>
+          <div ref={containerRef} className="relative h-full w-full">
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 cursor-grab active:cursor-grabbing"
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+            />
+          </div>
+        </PageFill>
+      </PageWorkspace>
 
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-md">
@@ -671,6 +703,6 @@ export function ConnectionsGraph(): React.JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </PageShell>
   )
 }
