@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import AVFoundation
+import CoreMedia
 
 // MARK: - Bridge Server Service
 // WebSocket client that sends video frames + audio to the bridge server
@@ -27,7 +28,7 @@ final class BridgeServerService {
 
     // Frame sampling
     private var frameCounter: Int = 0
-    let frameSampleInterval: Int = 3 // Send every 3rd frame (~5fps at 15fps input)
+    let frameSampleInterval: Int = 1 // Send every frame (full 15fps to server)
 
     // Results
     private var faceResultContinuation: AsyncStream<FaceResultMessage>.Continuation?
@@ -93,25 +94,54 @@ final class BridgeServerService {
 
     // MARK: - Send Video Frame
 
-    func sendVideoFrame(_ image: UIImage, timestamp: Date) {
+    func sendFrame(_ frameData: VideoFrameData, timestamp: Date) {
         guard connectionStatus == .connected else { return }
 
         // Sample frames — only send every Nth frame
         frameCounter += 1
         guard frameCounter % frameSampleInterval == 0 else { return }
 
-        // Compress to JPEG (lower quality = less CPU + memory)
-        guard let jpegData = image.jpegData(compressionQuality: 0.3) else { return }
+        // Try to extract compressed data from CMSampleBuffer (HEVC — no CPU cost)
+        // Fall back to JPEG encoding if sample buffer not available (mock mode)
+        let payloadData: Data
+        let codec: String
+
+        if let sampleBuffer = frameData.sampleBuffer,
+           let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) {
+            // Extract HEVC data directly — zero CPU encoding cost
+            let length = CMBlockBufferGetDataLength(dataBuffer)
+            var rawData = Data(count: length)
+            rawData.withUnsafeMutableBytes { ptr in
+                if let baseAddress = ptr.baseAddress {
+                    CMBlockBufferCopyDataBytes(dataBuffer, atOffset: 0, dataLength: length, destination: baseAddress)
+                }
+            }
+            payloadData = rawData
+            codec = "hevc"
+        } else {
+            // Fallback: JPEG encode (for mock service or raw codec)
+            var mutableFrame = frameData
+            guard let image = mutableFrame.displayImage,
+                  let jpeg = image.jpegData(compressionQuality: 0.3) else { return }
+            payloadData = jpeg
+            codec = "jpeg"
+        }
+
+        // Get dimensions from display image
+        var mutableFrame = frameData
+        let w = mutableFrame.displayImage.map { Int($0.size.width) } ?? 0
+        let h = mutableFrame.displayImage.map { Int($0.size.height) } ?? 0
 
         // Build binary message
         let meta: [String: Any] = [
             "ts": timestamp.timeIntervalSince1970,
-            "w": Int(image.size.width),
-            "h": Int(image.size.height),
+            "w": w,
+            "h": h,
+            "codec": codec,
         ]
         guard let metaJSON = try? JSONSerialization.data(withJSONObject: meta) else { return }
 
-        var data = Data(capacity: 8 + metaJSON.count + jpegData.count)
+        var data = Data(capacity: 8 + metaJSON.count + payloadData.count)
 
         var messageType: UInt32 = 1
         data.append(Data(bytes: &messageType, count: 4))
@@ -120,7 +150,7 @@ final class BridgeServerService {
         data.append(Data(bytes: &metaLength, count: 4))
 
         data.append(metaJSON)
-        data.append(jpegData)
+        data.append(payloadData)
 
         webSocketTask?.send(.data(data)) { [weak self] error in
             if let error = error {

@@ -253,18 +253,22 @@ final class StreamViewModel {
             }
         }
 
-        // Video frames — direct assignment, no detached tasks
+        // Video frames — use VideoFrameData for efficient pipeline
         let frameTask = Task {
-            for await frame in service.videoFrameStream {
-                self.currentFrame = frame
+            for await var frameData in service.videoFrameStream {
                 self.frameCount += 1
                 self.framesThisSecond += 1
                 self.lastFrameTime = Date()
-                self.resolution = "\(Int(frame.size.width))x\(Int(frame.size.height))"
 
-                // Send to bridge inline — only if connected
+                // Get display image if available (nil with HEVC codec)
+                if let displayImage = frameData.displayImage {
+                    self.currentFrame = displayImage
+                    self.resolution = "\(Int(displayImage.size.width))x\(Int(displayImage.size.height))"
+                }
+
+                // Send to bridge — uses HEVC data directly when available
                 if self.bridgeService.connectionStatus == .connected {
-                    self.bridgeService.sendVideoFrame(frame, timestamp: Date())
+                    self.bridgeService.sendFrame(frameData, timestamp: Date())
                 }
             }
         }

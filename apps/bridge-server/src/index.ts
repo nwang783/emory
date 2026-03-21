@@ -77,49 +77,77 @@ async function main(): Promise<void> {
       // Simple frame viewer — open in browser to see incoming frames
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(`<!DOCTYPE html>
-<html><head><title>Emory Bridge</title>
+<html><head><title>Emory Live</title>
 <style>
-  body { background: #111; color: #eee; font-family: system-ui; margin: 0; padding: 20px; }
-  h1 { color: #4A90D9; font-size: 24px; }
-  #status { color: #7BAE7F; margin: 10px 0; }
-  #frame { max-width: 100%; border-radius: 12px; background: #222; }
-  #info { font-family: monospace; font-size: 13px; color: #999; margin: 8px 0; }
-  #matches { color: #7BAE7F; font-size: 18px; font-weight: bold; margin: 8px 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; color: #eee; font-family: system-ui; height: 100vh; display: flex; flex-direction: column; }
+  .header { padding: 12px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #222; }
+  .header h1 { color: #4A90D9; font-size: 20px; font-weight: 700; }
+  .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  #status { background: #1a1a1a; color: #999; }
+  #status.live { background: #1a2e1a; color: #7BAE7F; }
+  #fps { background: #1a1a2e; color: #4A90D9; margin-left: auto; font-family: monospace; }
+  #matches { padding: 8px 20px; color: #7BAE7F; font-size: 16px; font-weight: 600; min-height: 28px; }
+  .video-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 10px; }
+  canvas { max-width: 100%; max-height: 100%; border-radius: 8px; background: #111; }
 </style>
 </head><body>
-<h1>Emory Bridge Server</h1>
-<div id="status">Waiting for iOS connection...</div>
+<div class="header">
+  <h1>Emory Live</h1>
+  <span class="badge" id="status">Connecting...</span>
+  <span class="badge" id="fps">-- fps</span>
+</div>
 <div id="matches"></div>
-<canvas id="frame" width="720" height="1280"></canvas>
-<div id="info"></div>
+<div class="video-container">
+  <canvas id="frame"></canvas>
+</div>
 <script>
 const ws = new WebSocket('ws://' + location.host);
+ws.binaryType = 'arraybuffer';
 const canvas = document.getElementById('frame');
 const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const fpsEl = document.getElementById('fps');
 let frameCount = 0;
+let lastFpsTime = performance.now();
+let fpsFrames = 0;
 
-ws.onopen = () => { document.getElementById('status').textContent = 'Connected — waiting for frames...'; };
-ws.onclose = () => { document.getElementById('status').textContent = 'Disconnected'; };
+ws.onopen = () => { statusEl.textContent = 'Waiting for stream...'; };
+ws.onclose = () => { statusEl.textContent = 'Disconnected'; statusEl.classList.remove('live'); };
 
 ws.onmessage = (e) => {
+  // Binary = JPEG frame
+  if (e.data instanceof ArrayBuffer) {
+    const blob = new Blob([e.data], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      if (canvas.width !== img.width) canvas.width = img.width;
+      if (canvas.height !== img.height) canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      frameCount++;
+      fpsFrames++;
+      statusEl.textContent = 'LIVE';
+      statusEl.classList.add('live');
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsEl.textContent = fpsFrames + ' fps';
+        fpsFrames = 0;
+        lastFpsTime = now;
+      }
+    };
+    img.src = url;
+    return;
+  }
+  // String = JSON messages (face results, etc.)
   if (typeof e.data === 'string') {
     try {
       const msg = JSON.parse(e.data);
       if (msg.type === 'face_result' && msg.matches?.length > 0) {
         document.getElementById('matches').textContent =
-          msg.matches.map(m => m.name + ' (' + Math.round(m.similarity * 100) + '%)').join(', ');
-      }
-      if (msg.type === 'viewer_frame') {
-        const img = new Image();
-        img.onload = () => {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          frameCount++;
-          document.getElementById('info').textContent = 'Frame #' + frameCount + ' — ' + img.width + 'x' + img.height;
-          document.getElementById('status').textContent = 'Receiving frames';
-        };
-        img.src = 'data:image/jpeg;base64,' + msg.jpeg;
+          msg.matches.map(m => '\\u{1F44B} ' + m.name + ' (' + Math.round(m.similarity * 100) + '%)').join('  ');
+        setTimeout(() => { document.getElementById('matches').textContent = ''; }, 5000);
       }
     } catch {}
   }
@@ -191,21 +219,12 @@ ws.onmessage = (e) => {
 
     const handler = new WsHandler(ws, frameProcessor, audioProcessor)
 
-    // Forward frames to browser viewers (throttled to ~2fps to save bandwidth)
-    let lastViewerFrameTime = 0
+    // Forward frames to browser viewers — full framerate, binary for speed
     handler.onFrame = (jpeg) => {
       identifiedAsIOS = true
-      const now = Date.now()
-      if (now - lastViewerFrameTime < 500) return // Max 2fps to viewers
-      lastViewerFrameTime = now
-
-      const viewerMsg = JSON.stringify({
-        type: 'viewer_frame',
-        jpeg: jpeg.toString('base64'),
-      })
       for (const viewer of viewerClients) {
         if (viewer.readyState === viewer.OPEN) {
-          viewer.send(viewerMsg)
+          viewer.send(jpeg) // Send raw JPEG binary — much faster than base64
         }
       }
     }
