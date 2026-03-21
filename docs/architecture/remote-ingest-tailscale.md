@@ -6,12 +6,13 @@ This document describes how the **Electron desktop app** exposes a **remote inge
 
 | Piece | Status |
 |-------|--------|
-| **HTTP `GET /health`** on configurable TCP port | Implemented (`protoVersion` **2** adds `wsIngestPath`) |
+| **HTTP `GET /health`** on configurable TCP port | Implemented (`protoVersion` **3** adds `wsSignalingPath`) |
 | **HTTP upgrade → WebSocket `/ingest`** — publisher → viewers (binary relay) | Implemented |
+| **HTTP upgrade → WebSocket `/signaling`** — JSON WebRTC signaling (`?role=desktop` \| `mobile`) | Implemented |
 | **Persisted settings** (`remote-ingest-config.json` in app userData) | Implemented |
-| **Settings UI** (bind mode, port, beacon, friendly name) | Implemented |
-| **Camera tab** remote viewer (`?role=viewer`) | Implemented |
-| **WebRTC** | Planned (optional vs JPEG WS) |
+| **Settings UI** (bind mode, port, beacon, friendly name, **Prefer WebRTC video**) | Implemented |
+| **Camera tab** remote viewer (`?role=viewer` on `/ingest`) or WebRTC (`/signaling?role=desktop`) | Implemented |
+| **WebRTC on iOS** | Phone app must publish offer + ICE; see [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) |
 | **Pairing + session tokens** | Planned |
 
 ## Topology
@@ -25,9 +26,10 @@ This document describes how the **Electron desktop app** exposes a **remote inge
 
 ## HTTP API (Phase 0)
 
-- **`GET /health`** — JSON: `{ ok, service, protoVersion, instanceId, friendlyName, signalingPort, wsIngestPath }`.
-- **`GET /`** — short plain-text pointer to `/health` and `/ingest`.
+- **`GET /health`** — JSON: `{ ok, service, protoVersion, instanceId, friendlyName, signalingPort, wsIngestPath, wsSignalingPath }`.
+- **`GET /`** — short plain-text pointer to `/health`, `/ingest`, and `/signaling`.
 - **`WS /ingest`** — same TCP port; **`?role=viewer`** (desktop) or publisher (default / `?role=publisher`). Relay only; see [remote-camera-desktop-plan.md](./remote-camera-desktop-plan.md).
+- **`WS /signaling`** — same TCP port; UTF-8 JSON (`offer` / `answer` / `ice`). **`?role=desktop`** (Electron renderer) vs **`?role=mobile`** (phone). See [ios-remote-ingest-client.md](./ios-remote-ingest-client.md).
 
 No authentication on `/health` yet; keep the port **tailnet-only** via ACLs until pairing ships.
 
@@ -54,5 +56,6 @@ Fields mirror the Settings UI plus a stable **`instanceId`** for discovery dedup
 ## Related
 
 - [remote-discovery.md](./remote-discovery.md) — UDP multicast beacon.
-- [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) — **iOS app implementation guide** (health check, discovery, future signaling).
+- [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) — **iOS app implementation guide** (health check, discovery, signaling).
+- [remote-ingest-webrtc-encoding.md](./remote-ingest-webrtc-encoding.md) — **WebRTC publisher encoding** (FPS, bitrate, GOP) + desktop codec prefs.
 - [conversation-recording.md](./conversation-recording.md) — local mic pipeline (parity target for remote audio).

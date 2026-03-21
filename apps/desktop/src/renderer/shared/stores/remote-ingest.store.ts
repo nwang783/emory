@@ -9,6 +9,7 @@ export type RemoteIngestUpdatedPayload = {
     beaconIntervalMs: number
     mdnsEnabled: boolean
     friendlyName: string
+    webrtcVideoPreferred: boolean
   }
   instanceId: string
   status: {
@@ -29,6 +30,7 @@ type RemoteIngestState = {
   listening: boolean
   effectiveHost: string | null
   signalingPort: number
+  webrtcVideoPreferred: boolean
   lastError: string | null
   instanceId: string
   applyPayload: (payload: RemoteIngestUpdatedPayload) => void
@@ -41,6 +43,7 @@ export const useRemoteIngestStore = create<RemoteIngestState>((set) => ({
   listening: false,
   effectiveHost: null,
   signalingPort: 18763,
+  webrtcVideoPreferred: true,
   lastError: null,
   instanceId: '',
 
@@ -51,6 +54,7 @@ export const useRemoteIngestStore = create<RemoteIngestState>((set) => ({
       listening: payload.status.listening,
       effectiveHost: payload.status.effectiveHost,
       signalingPort: payload.config.signalingPort,
+      webrtcVideoPreferred: payload.config.webrtcVideoPreferred,
       lastError: payload.status.lastError,
       instanceId: payload.instanceId,
     })
@@ -67,6 +71,7 @@ export const useRemoteIngestStore = create<RemoteIngestState>((set) => ({
       listening: st.listening,
       effectiveHost: st.effectiveHost,
       signalingPort: cfg.config.signalingPort,
+      webrtcVideoPreferred: cfg.config.webrtcVideoPreferred,
       lastError: st.lastError,
       instanceId: cfg.instanceId,
     })

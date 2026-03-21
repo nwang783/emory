@@ -43,6 +43,10 @@ function normalizeConfig(raw: unknown): RemoteIngestPersisted {
       typeof o.friendlyName === 'string' && o.friendlyName.trim().length > 0
         ? o.friendlyName.trim().slice(0, 80)
         : REMOTE_INGEST_DEFAULT_CONFIG.friendlyName,
+    webrtcVideoPreferred:
+      typeof o.webrtcVideoPreferred === 'boolean'
+        ? o.webrtcVideoPreferred
+        : REMOTE_INGEST_DEFAULT_CONFIG.webrtcVideoPreferred,
     instanceId,
   }
 }

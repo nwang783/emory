@@ -1,8 +1,11 @@
 /** Wire format version in `/health` and discovery beacons; bump when ingest API changes. */
-export const REMOTE_INGEST_PROTO_VERSION = 2
+export const REMOTE_INGEST_PROTO_VERSION = 3
 
 /** WebSocket path for binary ingest (publisher → server → viewers). Same port as HTTP. */
 export const REMOTE_INGEST_WS_PATH = '/ingest'
+
+/** WebSocket path for WebRTC SDP/ICE relay (JSON text). Same port as HTTP. */
+export const REMOTE_INGEST_SIGNALING_PATH = '/signaling'
 
 /** Bind address policy for the remote ingest HTTP listener. */
 export type RemoteIngestBindMode = 'all' | 'loopback' | 'tailscale'
@@ -20,6 +23,11 @@ export type RemoteIngestConfig = {
   mdnsEnabled: boolean
   /** Shown in discovery UIs; not a security control. */
   friendlyName: string
+  /**
+   * When true (default), Camera uses WebRTC for remote video (lower latency).
+   * When false, uses JPEG-over-WebSocket `/ingest` only.
+   */
+  webrtcVideoPreferred: boolean
 }
 
 /** Runtime status returned to the renderer. */
@@ -46,6 +54,7 @@ export const REMOTE_INGEST_DEFAULT_CONFIG: RemoteIngestConfig = {
   beaconIntervalMs: 2000,
   mdnsEnabled: false,
   friendlyName: 'Emory home',
+  webrtcVideoPreferred: true,
 }
 
 export const REMOTE_INGEST_CONFIG_FILE = 'remote-ingest-config.json'

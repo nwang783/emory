@@ -154,6 +154,7 @@ const emoryApi = {
         beaconIntervalMs: number
         mdnsEnabled: boolean
         friendlyName: string
+        webrtcVideoPreferred: boolean
       }
       instanceId: string
     }> => ipcRenderer.invoke('remote-ingest:get-config'),
@@ -177,6 +178,7 @@ const emoryApi = {
       beaconIntervalMs?: number
       mdnsEnabled?: boolean
       friendlyName?: string
+      webrtcVideoPreferred?: boolean
     }) => ipcRenderer.invoke('remote-ingest:apply', payload),
 
     onUpdated: (
@@ -189,6 +191,7 @@ const emoryApi = {
           beaconIntervalMs: number
           mdnsEnabled: boolean
           friendlyName: string
+          webrtcVideoPreferred: boolean
         }
         instanceId: string
         status: {

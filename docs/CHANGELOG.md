@@ -1,5 +1,27 @@
 # Documentation changelog
 
+## 2026-03-21 — WebRTC: open questions (documented doubts)
+
+- **[remote-ingest-webrtc-encoding.md](./architecture/remote-ingest-webrtc-encoding.md)** — “Open questions / documented doubts”: iOS stack choice (WebRTC.framework vs Meta/custom), HEVC vs H.264, TURN need, untuned bitrate/FPS defaults.
+
+## 2026-03-21 — WebRTC: codec preferences + encoding guide
+
+- **Desktop** — [`orderVideoCodecsForIngest.ts`](../apps/desktop/src/renderer/modules/camera/lib/orderVideoCodecsForIngest.ts), [`useRemoteIngestWebRtc.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts): before `createAnswer()`, prefer **H.264 → VP8 → VP9 → AV1** on video m-lines; `max-bundle` + `rtcpMuxPolicy: require`. Unit tests (pure SDP/codec ordering): [`orderVideoCodecsForIngest.test.ts`](../apps/desktop/src/renderer/modules/camera/lib/orderVideoCodecsForIngest.test.ts) — `bun run test:camera-codecs` in `apps/desktop`.
+- **Docs** — [remote-ingest-webrtc-encoding.md](./architecture/remote-ingest-webrtc-encoding.md) (mobile encoder checklist: FPS, bitrate, GOP, degradation).
+- **Tooling** — [`apps/desktop/tsconfig.web.json`](../apps/desktop/tsconfig.web.json) excludes `**/*.test.ts` from renderer typecheck.
+
+## 2026-03-21 — Camera: remote overlay + detection dimensions
+
+- **Renderer** — [`WebcamFeed.tsx`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx): `runDetection` and overlay sizing use **`frameWidth` / `frameHeight`** from the active feed (local, JPEG remote, or WebRTC) instead of the local-only `videoRef`, so boxes and `detectOnly` run correctly for remote ingest.
+- **Docs** — [remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md) “Framerate and smooth preview”.
+
+## 2026-03-21 — Remote ingest: WebRTC `/signaling` + proto 3
+
+- **Desktop** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): second WebSocket **`/signaling`** for JSON **SDP/ICE** relay; roles **`?role=desktop`** (renderer) vs **`?role=mobile`** (phone). `/health` + UDP beacon **`protoVersion` 3** + `wsSignalingPath`.
+- **Config** — `webrtcVideoPreferred` in persisted config + IPC + preload; **Settings → Prefer WebRTC video** ([`RemoteIngestSettings.tsx`](../apps/desktop/src/renderer/modules/settings/components/RemoteIngestSettings.tsx)).
+- **Renderer** — [`useRemoteIngestWebRtc.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts), [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts): default to WebRTC when preferred; JPEG `/ingest` when off.
+- **Docs** — [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md), [remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [remote-discovery.md](./architecture/remote-discovery.md), [remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md), [apps/desktop.md](./apps/desktop.md).
+
 ## 2026-03-21 — Remote ingest: WS `/ingest` + Camera viewer
 
 - **Desktop** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): WebSocket **`/ingest`** relays binary frames from **publisher** (phone) to **viewers** (desktop). `/health` **`protoVersion` 2** + `wsIngestPath`. [`@emory/ingest-protocol`](../packages/ingest-protocol/) shared parse/constants.

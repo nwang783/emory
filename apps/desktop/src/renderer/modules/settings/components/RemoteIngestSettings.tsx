@@ -27,6 +27,7 @@ type ConfigForm = {
   beaconIntervalMs: number
   mdnsEnabled: boolean
   friendlyName: string
+  webrtcVideoPreferred: boolean
 }
 
 type StatusPayload = {
@@ -48,6 +49,7 @@ const REMOTE_INGEST_FORM_DEFAULT: ConfigForm = {
   beaconIntervalMs: 2000,
   mdnsEnabled: false,
   friendlyName: 'Emory home',
+  webrtcVideoPreferred: true,
 }
 
 export function RemoteIngestSettings(): React.JSX.Element {
@@ -68,6 +70,7 @@ export function RemoteIngestSettings(): React.JSX.Element {
       beaconIntervalMs: cfg.config.beaconIntervalMs,
       mdnsEnabled: cfg.config.mdnsEnabled,
       friendlyName: cfg.config.friendlyName,
+      webrtcVideoPreferred: cfg.config.webrtcVideoPreferred,
     })
     setInstanceId(cfg.instanceId)
     setStatus(st as StatusPayload)
@@ -93,6 +96,7 @@ export function RemoteIngestSettings(): React.JSX.Element {
         beaconIntervalMs: form.beaconIntervalMs,
         mdnsEnabled: form.mdnsEnabled,
         friendlyName: form.friendlyName,
+        webrtcVideoPreferred: form.webrtcVideoPreferred,
       })
       if (
         result &&
@@ -136,6 +140,11 @@ export function RemoteIngestSettings(): React.JSX.Element {
       lines.push(`  ws://${a}:${port}/ingest`)
     }
     lines.push('  Phone / glasses app: publisher (default). Desktop Camera: viewer (?role=viewer).')
+    lines.push('', 'WebRTC signaling (JSON text, same port):')
+    for (const a of addrs) {
+      lines.push(`  ws://${a}:${port}/signaling`)
+    }
+    lines.push('  Desktop: ?role=desktop. Phone: ?role=mobile. Phone sends offer; desktop answers.')
     if (status.tailscaleHint) {
       lines.push('')
       lines.push(`MagicDNS-style hint (verify in Tailscale admin): ${status.tailscaleHint}`)
@@ -177,9 +186,10 @@ export function RemoteIngestSettings(): React.JSX.Element {
               Remote ingest
             </CardTitle>
             <CardDescription className="text-xs">
-              Stream glasses video from your phone over Tailscale: HTTP <code className="font-mono-ui">/health</code>,
-              WebSocket <code className="font-mono-ui">/ingest</code> (binary JPEG frames, same protocol as the bridge
-              server). The desktop Camera tab can subscribe as a viewer when ingest is enabled and listening.
+              Stream glasses video from your phone over Tailscale: HTTP <code className="font-mono-ui">/health</code>,{' '}
+              WebSocket <code className="font-mono-ui">/ingest</code> (JPEG fallback), and{' '}
+              <code className="font-mono-ui">/signaling</code> for WebRTC (lower latency; default on via{' '}
+              <strong>Prefer WebRTC video</strong> below).
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -226,6 +236,23 @@ export function RemoteIngestSettings(): React.JSX.Element {
             id="remote-ingest-enabled"
             checked={form.enabled}
             onCheckedChange={(enabled) => setForm((f) => ({ ...f, enabled }))}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="remote-ingest-webrtc" className="text-sm">
+              Prefer WebRTC video (low latency)
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Camera uses <code className="font-mono-ui">/signaling</code> + WebRTC when on. Turn off to use JPEG-only{' '}
+              <code className="font-mono-ui">/ingest</code> (easier for simple clients).
+            </p>
+          </div>
+          <Switch
+            id="remote-ingest-webrtc"
+            checked={form.webrtcVideoPreferred}
+            onCheckedChange={(webrtcVideoPreferred) => setForm((f) => ({ ...f, webrtcVideoPreferred }))}
           />
         </div>
 

@@ -44,6 +44,7 @@ export function registerRemoteIngestIpc(
     if (typeof o.beaconIntervalMs === 'number') patch.beaconIntervalMs = o.beaconIntervalMs
     if (typeof o.mdnsEnabled === 'boolean') patch.mdnsEnabled = o.mdnsEnabled
     if (typeof o.friendlyName === 'string') patch.friendlyName = o.friendlyName
+    if (typeof o.webrtcVideoPreferred === 'boolean') patch.webrtcVideoPreferred = o.webrtcVideoPreferred
 
     try {
       const next = await settings.save(patch)
@@ -59,6 +60,7 @@ export function registerRemoteIngestIpc(
           beaconIntervalMs: next.beaconIntervalMs,
           mdnsEnabled: next.mdnsEnabled,
           friendlyName: next.friendlyName,
+          webrtcVideoPreferred: next.webrtcVideoPreferred,
           instanceId: next.instanceId,
         },
         status,

@@ -1,9 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useWebcam } from './useWebcam'
 import { useRemoteIngestViewer } from './useRemoteIngestViewer'
+import { useRemoteIngestWebRtc } from './useRemoteIngestWebRtc'
 import { useRemoteIngestStore } from '@/shared/stores/remote-ingest.store'
 
 export type CameraFeedMode = 'local' | 'remote'
+
+export type RemoteIngestTransport = 'webrtc' | 'jpeg-ws'
 
 const PREFER_LOCAL_STORAGE_KEY = 'emory-camera-prefer-local'
 
@@ -12,10 +15,13 @@ export type UseCameraFeedResult = {
   preferLocalOverride: boolean
   setPreferLocalOverride: (value: boolean) => void
   remoteIngestAvailable: boolean
+  remoteTransport: RemoteIngestTransport | null
+  /** True when face / conversation pipelines should run (remote = only when media is flowing). */
+  feedReady: boolean
   isActive: boolean
   error: string | null
   cameraLabel: string | null
-  remotePhase: ReturnType<typeof useRemoteIngestViewer>['phase']
+  remoteStatusHint: string | null
   start: () => Promise<void>
   stop: () => void
   captureFrame: () => ArrayBuffer | null
@@ -24,6 +30,8 @@ export type UseCameraFeedResult = {
   videoRef: React.RefObject<HTMLVideoElement | null>
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   previewCanvasRef: React.RefObject<HTMLCanvasElement | null>
+  webRtcVideoRef: React.RefObject<HTMLVideoElement | null>
+  webRtcCaptureCanvasRef: React.RefObject<HTMLCanvasElement | null>
 }
 
 export function useCameraFeed(): UseCameraFeedResult {
@@ -32,6 +40,7 @@ export function useCameraFeed(): UseCameraFeedResult {
   const listening = useRemoteIngestStore((s) => s.listening)
   const effectiveHost = useRemoteIngestStore((s) => s.effectiveHost)
   const signalingPort = useRemoteIngestStore((s) => s.signalingPort)
+  const webrtcVideoPreferred = useRemoteIngestStore((s) => s.webrtcVideoPreferred)
 
   const [preferLocalOverride, setPreferLocalState] = useState(() => {
     try {
@@ -58,43 +67,130 @@ export function useCameraFeed(): UseCameraFeedResult {
     hydrated && configEnabled && listening && effectiveHost !== null && effectiveHost.length > 0
 
   const useRemote = remoteIngestAvailable && !preferLocalOverride
+  const useWebrtc = useRemote && webrtcVideoPreferred
+  const useJpeg = useRemote && !webrtcVideoPreferred
 
   const local = useWebcam()
-  const remote = useRemoteIngestViewer({
-    armed: useRemote,
+  const jpegRemote = useRemoteIngestViewer({
+    armed: useJpeg,
+    host: effectiveHost,
+    port: signalingPort,
+  })
+  const webrtcRemote = useRemoteIngestWebRtc({
+    armed: useWebrtc,
     host: effectiveHost,
     port: signalingPort,
   })
 
   const stop = useCallback(() => {
     local.stop()
-    remote.stop()
-  }, [local, remote])
+    jpegRemote.stop()
+    webrtcRemote.stop()
+  }, [local, jpegRemote, webrtcRemote])
 
   const start = useCallback(async () => {
     if (useRemote) {
-      await remote.start()
+      if (webrtcVideoPreferred) {
+        await webrtcRemote.start()
+      } else {
+        await jpegRemote.start()
+      }
     } else {
       await local.start()
     }
-  }, [useRemote, remote, local])
+  }, [useRemote, webrtcVideoPreferred, webrtcRemote, jpegRemote, local])
+
+  const mode: CameraFeedMode = useRemote ? 'remote' : 'local'
+
+  const isActive = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.isActive
+      : jpegRemote.isActive
+    : local.isActive
+
+  const feedReady =
+    mode === 'local'
+      ? local.isActive
+      : webrtcVideoPreferred
+        ? webrtcRemote.phase === 'streaming'
+        : jpegRemote.phase === 'streaming'
+
+  const remoteTransport: RemoteIngestTransport | null = useRemote
+    ? webrtcVideoPreferred
+      ? 'webrtc'
+      : 'jpeg-ws'
+    : null
+
+  const error = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.error
+      : jpegRemote.error
+    : local.error
+
+  const cameraLabel = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.cameraLabel
+      : jpegRemote.cameraLabel
+    : local.cameraLabel
+
+  const captureFrame = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.captureFrame
+      : jpegRemote.captureFrame
+    : local.captureFrame
+
+  const frameWidth = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.frameWidth
+      : jpegRemote.frameWidth
+    : local.frameWidth
+
+  const frameHeight = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.frameHeight
+      : jpegRemote.frameHeight
+    : local.frameHeight
+
+  const remoteStatusHint = useMemo((): string | null => {
+    if (!useRemote) return null
+    if (webrtcVideoPreferred) {
+      if (webrtcRemote.phase === 'signaling') {
+        return 'WebRTC: waiting for the phone to send an offer (same /signaling WebSocket).'
+      }
+      if (webrtcRemote.phase === 'negotiating') {
+        return 'WebRTC: finishing handshake…'
+      }
+      return null
+    }
+    if (jpegRemote.phase === 'connecting') {
+      return 'Connecting to JPEG ingest WebSocket…'
+    }
+    if (jpegRemote.phase === 'waiting_publisher') {
+      return 'Waiting for JPEG frames from the phone (/ingest publisher).'
+    }
+    return null
+  }, [useRemote, webrtcVideoPreferred, webrtcRemote.phase, jpegRemote.phase])
 
   return {
-    mode: useRemote ? 'remote' : 'local',
+    mode,
     preferLocalOverride,
     setPreferLocalOverride,
     remoteIngestAvailable,
-    isActive: useRemote ? remote.isActive : local.isActive,
-    error: useRemote ? remote.error : local.error,
-    cameraLabel: useRemote ? remote.cameraLabel : local.cameraLabel,
-    remotePhase: remote.phase,
+    remoteTransport,
+    feedReady,
+    isActive,
+    error,
+    cameraLabel,
+    remoteStatusHint,
     start,
     stop,
-    captureFrame: useRemote ? remote.captureFrame : local.captureFrame,
-    frameWidth: useRemote ? remote.frameWidth : local.frameWidth,
-    frameHeight: useRemote ? remote.frameHeight : local.frameHeight,
+    captureFrame,
+    frameWidth,
+    frameHeight,
     videoRef: local.videoRef,
     canvasRef: local.canvasRef,
-    previewCanvasRef: remote.previewCanvasRef,
+    previewCanvasRef: jpegRemote.previewCanvasRef,
+    webRtcVideoRef: webrtcRemote.videoRef,
+    webRtcCaptureCanvasRef: webrtcRemote.canvasRef,
   }
 }

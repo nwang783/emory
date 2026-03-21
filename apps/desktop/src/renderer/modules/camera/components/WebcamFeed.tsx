@@ -108,10 +108,12 @@ export function WebcamFeed(): React.JSX.Element {
     preferLocalOverride,
     setPreferLocalOverride,
     remoteIngestAvailable,
+    remoteTransport,
+    feedReady,
     isActive,
     error,
     cameraLabel,
-    remotePhase,
+    remoteStatusHint,
     start,
     stop,
     captureFrame,
@@ -120,10 +122,9 @@ export function WebcamFeed(): React.JSX.Element {
     videoRef,
     canvasRef,
     previewCanvasRef,
+    webRtcVideoRef,
+    webRtcCaptureCanvasRef,
   } = useCameraFeed()
-
-  const feedReady =
-    isActive && (mode === 'local' || (mode === 'remote' && remotePhase === 'streaming'))
 
   const overlayRef = useRef<HTMLCanvasElement | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -354,12 +355,13 @@ export function WebcamFeed(): React.JSX.Element {
     if (detectInFlightRef.current) return
     const frameData = captureFrame()
     if (!frameData) return
-    const video = videoRef.current
-    if (!video) return
+    const w = frameWidth
+    const h = frameHeight
+    if (w <= 0 || h <= 0) return
 
     detectInFlightRef.current = true
     try {
-      const result = await window.emoryApi.face.detectOnly(frameData, video.videoWidth, video.videoHeight)
+      const result = await window.emoryApi.face.detectOnly(frameData, w, h)
       setDetections(result.detections)
       setProcessingTimeMs(result.processingTimeMs)
 
@@ -424,14 +426,13 @@ export function WebcamFeed(): React.JSX.Element {
 
   const drawOverlay = useCallback(() => {
     const overlay = overlayRef.current
-    const video = videoRef.current
-    if (!overlay || !video) return
+    if (!overlay) return
 
     const ctx = overlay.getContext('2d')
     if (!ctx) return
 
-    const vw = video.videoWidth || 640
-    const vh = video.videoHeight || 480
+    const vw = frameWidth > 0 ? frameWidth : 640
+    const vh = frameHeight > 0 ? frameHeight : 480
 
     if (overlay.width !== vw) overlay.width = vw
     if (overlay.height !== vh) overlay.height = vh
@@ -564,7 +565,16 @@ export function WebcamFeed(): React.JSX.Element {
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center gap-4 overflow-y-auto p-4">
       <div className="relative overflow-hidden rounded-lg border border-border shadow-lg">
-        {mode === 'remote' ? (
+        {mode === 'remote' && remoteTransport === 'webrtc' ? (
+          <video
+            ref={webRtcVideoRef}
+            className="max-h-[calc(100vh-10rem)] bg-muted"
+            muted
+            playsInline
+            autoPlay
+            aria-label="Remote WebRTC camera preview"
+          />
+        ) : mode === 'remote' ? (
           <canvas
             ref={previewCanvasRef}
             className="block max-h-[calc(100vh-10rem)] w-auto max-w-full bg-muted"
@@ -575,6 +585,9 @@ export function WebcamFeed(): React.JSX.Element {
         )}
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         {mode === 'local' ? <canvas ref={canvasRef} className="hidden" /> : null}
+        {mode === 'remote' && remoteTransport === 'webrtc' ? (
+          <canvas ref={webRtcCaptureCanvasRef} className="hidden" />
+        ) : null}
 
         {isActive && autoLearnCount > 0 && (
           <div className="absolute top-3 right-3 z-10">
@@ -632,7 +645,11 @@ export function WebcamFeed(): React.JSX.Element {
         {!isActive ? (
           <Button onClick={() => void start()} size="lg">
             <Camera />
-            {mode === 'remote' ? 'Start remote camera' : 'Start camera'}
+            {mode === 'remote' && remoteTransport === 'webrtc'
+              ? 'Start remote camera (WebRTC)'
+              : mode === 'remote'
+                ? 'Start remote camera (JPEG)'
+                : 'Start camera'}
           </Button>
         ) : (
           <>

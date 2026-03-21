@@ -34,7 +34,7 @@ apps/desktop/
     │   └── services/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
     │       ├── remote-ingest-settings.service.ts  # Persist remote-ingest-config.json
-    │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest relay + UDP beacon
+    │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest + WS /signaling (WebRTC JSON) + UDP beacon
     │       ├── remote-ingest-network.ts          # Tailscale 100.x / bind helper
     │       ├── remote-ingest.types.ts            # Config + status types
     │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
@@ -60,8 +60,11 @@ apps/desktop/
         │   │   │   └── WhoIsThisButton.tsx # Voice announcement of identified people
         │   │   ├── hooks/
         │   │   │   ├── useWebcam.ts   # Webcam lifecycle management
+        │   │   │   ├── useCameraFeed.ts # Local vs remote ingest (JPEG or WebRTC)
+        │   │   │   ├── useRemoteIngestWebRtc.ts # RTCPeerConnection answerer + /signaling
         │   │   │   └── useConversationRecorder.ts # Mic + MediaRecorder driven by face tracks
         │   │   └── lib/
+        │   │       ├── orderVideoCodecsForIngest.ts # H.264-first codec prefs before createAnswer
         │   │       └── primarySubject.ts # Largest-bbox primary among identified tracks
         │   ├── people/
         │   │   └── components/
@@ -74,7 +77,7 @@ apps/desktop/
         │   ├── settings/
         │   │   └── components/
         │   │       ├── SettingsPanel.tsx      # Recognition, display, performance, conversation storage, remote ingest, retention
-    │   │       └── RemoteIngestSettings.tsx # Remote ingest hub (bind, port, beacon, copy connection kit)
+    │   │       └── RemoteIngestSettings.tsx # Remote ingest hub (bind, port, beacon, WebRTC toggle, copy connection kit)
         │   ├── activity/
         │   │   └── components/
         │   │       └── ActivityFeed.tsx       # Timestamped event log
@@ -144,12 +147,11 @@ apps/desktop/
 The **Remote ingest** card (`RemoteIngestSettings.tsx`) exposes:
 
 - **Enable** remote ingest HTTP listener; **bind** to Tailscale `100.x`, all interfaces, or loopback; **TCP port** (default 18763); **friendly name** for discovery; **UDP beacon** toggle and interval; placeholder for future **mDNS**.
-- **Apply & restart server** persists `<userData>/remote-ingest-config.json` and restarts the HTTP + beacon services.
-- **Copy connection details** puts health URLs and instance id on the clipboard for manual phone setup.
+- **Prefer WebRTC video** (default on): Camera uses **`/signaling`** + WebRTC for lower latency; off = JPEG-only **`/ingest`** viewer path.
+- **Apply & restart server** persists `<userData>/remote-ingest-config.json` and restarts the HTTP + WebSocket + beacon services.
+- **Copy connection details** puts health URLs, **`/ingest`**, **`/signaling`**, and instance id on the clipboard for manual phone setup.
 
-See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md) and [Remote discovery](../architecture/remote-discovery.md).
-
-**Planned:** When remote ingest is enabled, the **Camera** tab should show the **phone / Ray-Ban app video stream** instead of local `getUserMedia` — phased plan (WebSocket + JPEG aligned with `apps/bridge-server`, then optional WebRTC): [Remote camera (desktop) plan](../architecture/remote-camera-desktop-plan.md).
+See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md), [Remote discovery](../architecture/remote-discovery.md), and [Remote camera (desktop) plan](../architecture/remote-camera-desktop-plan.md) (implemented viewer + WebRTC answerer; phone must implement publisher / offer).
 
 The **Data Retention** card in `SettingsPanel` exposes:
 
@@ -401,13 +403,13 @@ Session state is managed in-process: `encounter:start-session` stores the active
 | `emoryApi.conversation.getMemoriesByPerson(personId, limit?)` | `conversation:get-memories-by-person` |
 | `emoryApi.conversation.queryMemories(input)` | `conversation:query-memories` |
 
-### Remote ingest (Phase 0)
+### Remote ingest (HTTP + WS `/ingest` + WS `/signaling`)
 
 | Channel | Direction | Returns |
 |---|---|---|
-| `remote-ingest:get-config` | Renderer → Main | `{ config, instanceId }` (persisted remote ingest settings) |
+| `remote-ingest:get-config` | Renderer → Main | `{ config, instanceId }` — `config` includes `webrtcVideoPreferred` among bind/port/beacon fields |
 | `remote-ingest:get-status` | Renderer → Main | `RemoteIngestStatus` (listening, addresses, beacon, errors) |
-| `remote-ingest:apply` | Renderer → Main | Partial config patch → `{ success, config?, status?, error? }` — saves file and restarts listener |
+| `remote-ingest:apply` | Renderer → Main | Partial config patch (incl. `webrtcVideoPreferred`) → `{ success, config?, status?, error? }` — saves file and restarts listener |
 | `remote-ingest:updated` | Main → Renderer | `{ config, instanceId, status }` — emitted after successful apply (all windows) |
 
 ### App Operations

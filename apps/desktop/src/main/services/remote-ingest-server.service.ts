@@ -7,6 +7,7 @@ import {
   REMOTE_INGEST_MULTICAST_ADDRESS,
   REMOTE_INGEST_MULTICAST_PORT,
   REMOTE_INGEST_PROTO_VERSION,
+  REMOTE_INGEST_SIGNALING_PATH,
   REMOTE_INGEST_WS_PATH,
   type RemoteIngestStatus,
 } from './remote-ingest.types.js'
@@ -18,69 +19,138 @@ import {
 } from './remote-ingest-network.js'
 import { MobileApiService } from './mobile-api.service.js'
 
+const MAX_SIGNALING_MESSAGE_BYTES = 512_000
+
 export class RemoteIngestServerService {
   private httpServer: http.Server | null = null
-  private wss: WebSocketServer | null = null
+  private ingestWss: WebSocketServer | null = null
+  private signalingWss: WebSocketServer | null = null
   private publisher: WebSocket | null = null
   private readonly viewers = new Set<WebSocket>()
+  private desktopSig: WebSocket | null = null
+  private mobileSig: WebSocket | null = null
   private beaconSocket: dgram.Socket | null = null
   private beaconTimer: ReturnType<typeof setInterval> | null = null
   private lastError: string | null = null
 
   constructor(private readonly mobileApiService?: MobileApiService) {}
 
-  private readonly handleIngestUpgrade = (req: http.IncomingMessage, socket: Socket, head: Buffer): void => {
-    if (req.url?.split('?')[0] !== REMOTE_INGEST_WS_PATH) {
-      socket.destroy()
+  private readonly handleHttpUpgrade = (req: http.IncomingMessage, socket: Socket, head: Buffer): void => {
+    const path = req.url?.split('?')[0]
+    if (path === REMOTE_INGEST_WS_PATH && this.ingestWss) {
+      this.ingestWss.handleUpgrade(req, socket, head, (ws) => {
+        this.attachIngestSocket(ws, req)
+      })
       return
     }
-    if (!this.wss) {
-      socket.destroy()
+    if (path === REMOTE_INGEST_SIGNALING_PATH && this.signalingWss) {
+      this.signalingWss.handleUpgrade(req, socket, head, (ws) => {
+        this.attachSignalingSocket(ws, req)
+      })
+      return
+    }
+    socket.destroy()
+  }
+
+  private attachIngestSocket(ws: WebSocket, req: http.IncomingMessage): void {
+    const url = new URL(req.url ?? REMOTE_INGEST_WS_PATH, 'http://127.0.0.1')
+    const isViewer = url.searchParams.get('role') === 'viewer'
+
+    if (isViewer) {
+      this.viewers.add(ws)
+      ws.on('close', () => {
+        this.viewers.delete(ws)
+      })
+      ws.on('error', () => {
+        this.viewers.delete(ws)
+      })
       return
     }
 
-    this.wss.handleUpgrade(req, socket, head, (ws) => {
-      const url = new URL(req.url ?? REMOTE_INGEST_WS_PATH, 'http://127.0.0.1')
-      const isViewer = url.searchParams.get('role') === 'viewer'
-
-      if (isViewer) {
-        this.viewers.add(ws)
-        ws.on('close', () => {
-          this.viewers.delete(ws)
-        })
-        ws.on('error', () => {
-          this.viewers.delete(ws)
-        })
-        return
+    if (this.publisher && this.publisher.readyState === WebSocket.OPEN) {
+      try {
+        this.publisher.close(1000, 'replaced')
+      } catch {
+        // ignore
       }
+    }
+    this.publisher = ws
 
-      if (this.publisher && this.publisher.readyState === WebSocket.OPEN) {
+    ws.on('message', (data, isBinary) => {
+      if (!isBinary) return
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+      for (const v of this.viewers) {
+        if (v.readyState === WebSocket.OPEN) {
+          v.send(buf, { binary: true })
+        }
+      }
+    })
+
+    const clearPublisher = (): void => {
+      if (this.publisher === ws) {
+        this.publisher = null
+      }
+    }
+    ws.on('close', clearPublisher)
+    ws.on('error', clearPublisher)
+  }
+
+  private attachSignalingSocket(ws: WebSocket, req: http.IncomingMessage): void {
+    const url = new URL(req.url ?? REMOTE_INGEST_SIGNALING_PATH, 'http://127.0.0.1')
+    const isDesktop = url.searchParams.get('role') === 'desktop'
+
+    if (isDesktop) {
+      if (this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN) {
         try {
-          this.publisher.close(1000, 'replaced')
+          this.desktopSig.close(1000, 'replaced')
         } catch {
           // ignore
         }
       }
-      this.publisher = ws
-
+      this.desktopSig = ws
       ws.on('message', (data, isBinary) => {
-        if (!isBinary) return
+        if (isBinary) return
         const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
-        for (const v of this.viewers) {
-          if (v.readyState === WebSocket.OPEN) {
-            v.send(buf, { binary: true })
-          }
+        if (buf.length > MAX_SIGNALING_MESSAGE_BYTES) return
+        const text = buf.toString('utf8')
+        if (this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN) {
+          this.mobileSig.send(text)
         }
       })
-
-      const clearPublisher = (): void => {
-        if (this.publisher === ws) {
-          this.publisher = null
+      const clear = (): void => {
+        if (this.desktopSig === ws) {
+          this.desktopSig = null
         }
       }
-      ws.on('close', clearPublisher)
-      ws.on('error', clearPublisher)
+      ws.on('close', clear)
+      ws.on('error', clear)
+      return
+    }
+
+    if (this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN) {
+      try {
+        this.mobileSig.close(1000, 'replaced')
+      } catch {
+        // ignore
+      }
+    }
+    this.mobileSig = ws
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) return
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+      if (buf.length > MAX_SIGNALING_MESSAGE_BYTES) return
+      const text = buf.toString('utf8')
+      if (this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN) {
+        this.desktopSig.send(text)
+      }
     })
+    const clear = (): void => {
+      if (this.mobileSig === ws) {
+        this.mobileSig = null
+      }
+    }
+    ws.on('close', clear)
+    ws.on('error', clear)
   }
 
   getStatus(persisted: RemoteIngestPersisted): RemoteIngestStatus {
@@ -115,7 +185,7 @@ export class RemoteIngestServerService {
     }
   }
 
-  private closeIngestWebSockets(): void {
+  private closeWebSockets(): void {
     if (this.publisher) {
       try {
         this.publisher.close()
@@ -132,21 +202,45 @@ export class RemoteIngestServerService {
       }
     }
     this.viewers.clear()
-    if (this.wss) {
+    if (this.desktopSig) {
       try {
-        this.wss.close()
+        this.desktopSig.close()
       } catch {
         // ignore
       }
-      this.wss = null
+      this.desktopSig = null
+    }
+    if (this.mobileSig) {
+      try {
+        this.mobileSig.close()
+      } catch {
+        // ignore
+      }
+      this.mobileSig = null
+    }
+    if (this.ingestWss) {
+      try {
+        this.ingestWss.close()
+      } catch {
+        // ignore
+      }
+      this.ingestWss = null
+    }
+    if (this.signalingWss) {
+      try {
+        this.signalingWss.close()
+      } catch {
+        // ignore
+      }
+      this.signalingWss = null
     }
   }
 
   async stop(): Promise<void> {
     this.stopBeacon()
-    this.closeIngestWebSockets()
+    this.closeWebSockets()
     if (this.httpServer) {
-      this.httpServer.removeListener('upgrade', this.handleIngestUpgrade)
+      this.httpServer.removeListener('upgrade', this.handleHttpUpgrade)
       await new Promise<void>((resolve, reject) => {
         this.httpServer!.close((err) => {
           if (err) reject(err)
@@ -203,6 +297,7 @@ export class RemoteIngestServerService {
           friendlyName: persisted.friendlyName,
           signalingPort: persisted.signalingPort,
           wsIngestPath: REMOTE_INGEST_WS_PATH,
+          wsSignalingPath: REMOTE_INGEST_SIGNALING_PATH,
         })
         res.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8',
@@ -276,7 +371,9 @@ export class RemoteIngestServerService {
 
       if (req.method === 'GET' && pathname === '/') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end(`Emory remote ingest — GET /health — WS ${REMOTE_INGEST_WS_PATH}?role=viewer|publisher\n`)
+        res.end(
+          `Emory remote ingest — GET /health — WS ${REMOTE_INGEST_WS_PATH}?role=viewer|publisher — WS ${REMOTE_INGEST_SIGNALING_PATH}?role=desktop|mobile\n`,
+        )
         return
       }
 
@@ -285,8 +382,9 @@ export class RemoteIngestServerService {
     })
 
     this.httpServer = server
-    this.wss = new WebSocketServer({ noServer: true })
-    server.on('upgrade', this.handleIngestUpgrade)
+    this.ingestWss = new WebSocketServer({ noServer: true })
+    this.signalingWss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', this.handleHttpUpgrade)
 
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject)
@@ -298,9 +396,9 @@ export class RemoteIngestServerService {
       const message = err instanceof Error ? err.message : String(err)
       this.lastError = message
       if (this.httpServer) {
-        this.httpServer.removeListener('upgrade', this.handleIngestUpgrade)
+        this.httpServer.removeListener('upgrade', this.handleHttpUpgrade)
       }
-      this.closeIngestWebSockets()
+      this.closeWebSockets()
       if (this.httpServer) {
         try {
           server.close()
@@ -332,6 +430,7 @@ export class RemoteIngestServerService {
         signalingPort: persisted.signalingPort,
         httpHealthPath: '/health',
         wsIngestPath: REMOTE_INGEST_WS_PATH,
+        wsSignalingPath: REMOTE_INGEST_SIGNALING_PATH,
         bindHostAdvertised:
           boundHost === '0.0.0.0' ? listTailscaleIpv4()[0] ?? listLanIpv4()[0] ?? '127.0.0.1' : boundHost,
       })

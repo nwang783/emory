@@ -1,19 +1,40 @@
 # Remote (Ray-Ban / phone) camera via network ingest
 
-When **Settings → Remote ingest** is **enabled** and **listening**, the **Camera** tab defaults to the **phone / glasses** path: the renderer opens **`WebSocket`** `ws://{effectiveHost}:{port}/ingest?role=viewer` and displays **JPEG frames** relayed from a **publisher** client (same binary protocol as [`apps/bridge-server`](../../apps/bridge-server/)). Users can **Use computer camera** to force local `getUserMedia` (stored in `sessionStorage`).
+When **Settings → Remote ingest** is **enabled** and **listening**, the **Camera** tab defaults to the **phone / glasses** path:
+
+- **Default (low latency):** **`Prefer WebRTC video`** is on → renderer opens **`ws://{effectiveHost}:{port}/signaling?role=desktop`** and negotiates **WebRTC** with the phone on **`?role=mobile`** (offer from phone, answer from desktop). Frames come from `<video>` + capture canvas like local webcam.
+- **Fallback:** If WebRTC is **off** in Settings, same host opens **`ws://…/ingest?role=viewer`** and displays **JPEG** relayed from a **publisher** (same binary protocol as [`apps/bridge-server`](../../apps/bridge-server/)).
+
+Users can **Use computer camera** to force local `getUserMedia` (stored in `sessionStorage`).
 
 ## Implemented (desktop)
 
 | Piece | Location |
 |-------|-----------|
 | Shared constants + binary parse | [`packages/ingest-protocol`](../../packages/ingest-protocol/) |
-| HTTP `/health` **protoVersion 2** + `wsIngestPath` | [`remote-ingest-server.service.ts`](../../apps/desktop/src/main/services/remote-ingest-server.service.ts) |
+| HTTP `/health` **protoVersion 3** + `wsIngestPath` + `wsSignalingPath` | [`remote-ingest-server.service.ts`](../../apps/desktop/src/main/services/remote-ingest-server.service.ts) |
 | WS `/ingest` relay (publisher → viewers) | Same |
+| WS `/signaling` relay (JSON SDP/ICE between mobile + desktop roles) | Same |
+| Persisted `webrtcVideoPreferred` | [`remote-ingest-settings.service.ts`](../../apps/desktop/src/main/services/remote-ingest-settings.service.ts), [`remote-ingest.types.ts`](../../apps/desktop/src/main/services/remote-ingest.types.ts) |
 | Renderer store + IPC `remote-ingest:updated` | [`remote-ingest.store.ts`](../../apps/desktop/src/renderer/shared/stores/remote-ingest.store.ts), [`remote-ingest.ipc.ts`](../../apps/desktop/src/main/ipc/remote-ingest.ipc.ts), [`preload/index.ts`](../../apps/desktop/src/preload/index.ts) |
-| `useCameraFeed` + `useRemoteIngestViewer` | [`useCameraFeed.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts), [`useRemoteIngestViewer.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts) |
+| `useCameraFeed` + `useRemoteIngestViewer` + `useRemoteIngestWebRtc` | [`useCameraFeed.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts), [`useRemoteIngestViewer.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts), [`useRemoteIngestWebRtc.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts) |
 | Camera UI | [`WebcamFeed.tsx`](../../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx) |
+| Settings toggle | [`RemoteIngestSettings.tsx`](../../apps/desktop/src/renderer/modules/settings/components/RemoteIngestSettings.tsx) |
 
-**Phone app:** connect to `ws://{host}:{port}/ingest` as **publisher** (omit `role` or `?role=publisher`). Send **`MSG_VIDEO_FRAME`** JPEG payloads per `@emory/ingest-protocol`.
+**Phone app:** for JPEG path, connect to `ws://{host}:{port}/ingest` as **publisher**. For WebRTC, connect to `ws://{host}:{port}/signaling?role=mobile` and send **`offer`** / **`ice`**; handle **`answer`** / **`ice`**. See [ios-remote-ingest-client.md](./ios-remote-ingest-client.md).
+
+### Framerate and “smooth” preview (desktop)
+
+| What you see | What limits it |
+|--------------|----------------|
+| **Live video motion** | **WebRTC** (`<video>`): typically as smooth as the phone encoder + network allow (often ~24–30+ fps). **JPEG `/ingest`**: only as fast as the **phone publishes** frames (each frame is decoded with `createImageBitmap` on the desktop — heavy at high res). |
+| **Bounding boxes / overlay** | Drawn every **animation frame** (`requestAnimationFrame`), with **lerp** between detection results so motion looks smoother than raw detections. |
+| **Face detection (SCRFD)** | Throttled by **Settings → Performance → Detection cooldown** (`detectCooldownMs`, default **50 ms** → up to ~**20** detection attempts/s if IPC keeps up). Actual FPS is often lower on large frames or under load — watch the live **FPS** indicator in the camera UI. |
+| **Identification / matching** | **Settings → Identify interval** (default **1500 ms**) — does not change video smoothness, only how often embeddings run. |
+
+For the **smoothest** remote experience: keep **Prefer WebRTC video** on, publish **steady 24–30 fps** from the phone, and avoid oversized JPEG-only streams if you must use `/ingest`.
+
+**WebRTC publisher encoding (phone):** [remote-ingest-webrtc-encoding.md](./remote-ingest-webrtc-encoding.md).
 
 ---
 
