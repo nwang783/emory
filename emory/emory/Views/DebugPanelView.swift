@@ -1,73 +1,88 @@
 import SwiftUI
 
 // MARK: - Debug Panel View
-// Scrollable list of timestamped debug events.
-// Shows frame count, FPS, and connection logs.
+// Collapsible list of timestamped debug events.
+// Starts collapsed; shows frame count, FPS, and connection logs when expanded.
 
 struct DebugPanelView: View {
     let events: [DebugEvent]
     let frameCount: Int
     let fps: Double
 
-    @State private var isExpanded = true
+    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header with toggle
+        VStack(alignment: .leading, spacing: 0) {
+            // Header toggle
             Button {
-                withAnimation { isExpanded.toggle() }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
             } label: {
-                HStack {
-                    Image(systemName: "ladybug")
-                    Text("Debug Panel")
-                        .font(.subheadline.bold())
+                HStack(spacing: 10) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 16))
+                        .foregroundStyle(EmoryTheme.textSecondary)
+
+                    Text("Debug Logs")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(EmoryTheme.textPrimary)
 
                     Spacer()
 
-                    // Quick stats
-                    Text("\(frameCount) frames")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                    Text(String(format: "%.0f fps", fps))
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(EmoryTheme.textSecondary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .foregroundStyle(.primary)
+                .padding(18)
             }
 
             if isExpanded {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                // Quick stats
+                HStack(spacing: 16) {
+                    Label("\(frameCount) frames", systemImage: "photo.stack")
+                    Label(String(format: "%.0f fps", fps), systemImage: "speedometer")
+                }
+                .font(.system(size: 12).monospaced())
+                .foregroundStyle(EmoryTheme.textSecondary)
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+                // Event log
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(events.prefix(30)) { event in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text(DateFormatter.debugFormatter.string(from: event.timestamp))
-                                    .font(.caption2.monospaced())
-                                    .foregroundStyle(.secondary)
+                    ForEach(events.suffix(30).reversed()) { event in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(DateFormatter.debugFormatter.string(from: event.timestamp))
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(EmoryTheme.textSecondary)
 
-                                Text("[\(event.level.rawValue)]")
-                                    .font(.caption2.monospaced().bold())
-                                    .foregroundStyle(colorForLevel(event.level))
+                            Text("[\(event.level.rawValue)]")
+                                .font(.caption2.monospaced().bold())
+                                .foregroundStyle(colorForLevel(event.level))
 
-                                Text(event.message)
-                                    .font(.caption2.monospaced())
-                                    .foregroundStyle(.primary)
-                            }
+                            Text(event.message)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(EmoryTheme.textPrimary)
                         }
                     }
                 }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 16)
+            }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .emoryCard()
     }
 
     private func colorForLevel(_ level: DebugEvent.Level) -> Color {
         switch level {
-        case .info: return .primary
+        case .info: return EmoryTheme.primary
         case .warning: return .orange
-        case .error: return .red
+        case .error: return EmoryTheme.destructive
         }
     }
 }

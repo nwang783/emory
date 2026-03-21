@@ -2,7 +2,7 @@ import UIKit
 
 // MARK: - Mock Meta Wearables Service
 // Simulates the Meta DAT SDK for Simulator testing.
-// Generates synthetic colored frames at ~30fps and simulates
+// Generates lightweight synthetic frames at ~15fps and simulates
 // connection/session state transitions.
 
 @MainActor
@@ -19,6 +19,13 @@ final class MockMetaWearablesService: MetaWearablesService {
     private var sessionContinuation: AsyncStream<SessionState>.Continuation?
     private var frameContinuation: AsyncStream<UIImage>.Continuation?
     private var audioContinuation: AsyncStream<Bool>.Continuation?
+
+    // Cached renderer to avoid re-creating every frame
+    private let frameWidth = 360
+    private let frameHeight = 640
+    private lazy var renderer = UIGraphicsImageRenderer(
+        size: CGSize(width: frameWidth, height: frameHeight)
+    )
 
     // MARK: - Streams
 
@@ -58,23 +65,23 @@ final class MockMetaWearablesService: MetaWearablesService {
 
         // Simulate connection sequence
         connectionContinuation?.yield(.connecting)
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+        try await Task.sleep(nanoseconds: 500_000_000)
 
         connectionContinuation?.yield(.connected)
         sessionContinuation?.yield(.starting)
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+        try await Task.sleep(nanoseconds: 500_000_000)
 
         sessionContinuation?.yield(.streaming)
         audioContinuation?.yield(true)
 
-        // Start generating frames at ~30fps
+        // Generate frames at ~15fps (matches real glasses rate)
         frameTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { break }
                 let frame = self.generateSyntheticFrame()
                 self.frameContinuation?.yield(frame)
                 self.frameCount += 1
-                try? await Task.sleep(nanoseconds: 33_000_000) // ~30fps
+                try? await Task.sleep(nanoseconds: 66_000_000) // ~15fps
             }
         }
     }
@@ -98,16 +105,10 @@ final class MockMetaWearablesService: MetaWearablesService {
     }
 
     // MARK: - Synthetic Frame Generation
-    // Creates a colored frame with a timestamp overlay.
-    // Colors cycle through a gradient so you can visually confirm frames are updating.
 
     private func generateSyntheticFrame() -> UIImage {
-        let width = 504
-        let height = 896
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
-
-        return renderer.image { context in
-            let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        renderer.image { context in
+            let rect = CGRect(x: 0, y: 0, width: frameWidth, height: frameHeight)
 
             // Cycle hue based on frame count for visual feedback
             let hue = CGFloat(frameCount % 360) / 360.0
@@ -118,19 +119,19 @@ final class MockMetaWearablesService: MetaWearablesService {
             // Draw frame counter + timestamp
             let text = "Frame \(frameCount)\n\(DateFormatter.debugFormatter.string(from: Date()))"
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedSystemFont(ofSize: 24, weight: .bold),
+                .font: UIFont.monospacedSystemFont(ofSize: 18, weight: .bold),
                 .foregroundColor: UIColor.white
             ]
-            let textRect = CGRect(x: 20, y: height / 2 - 30, width: width - 40, height: 80)
+            let textRect = CGRect(x: 16, y: frameHeight / 2 - 24, width: frameWidth - 32, height: 60)
             (text as NSString).draw(in: textRect, withAttributes: attrs)
 
             // Draw "MOCK" watermark
             let watermark = "MOCK FEED"
             let wmAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedSystemFont(ofSize: 16, weight: .regular),
+                .font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular),
                 .foregroundColor: UIColor.white.withAlphaComponent(0.5)
             ]
-            let wmRect = CGRect(x: 20, y: 20, width: width - 40, height: 30)
+            let wmRect = CGRect(x: 16, y: 16, width: frameWidth - 32, height: 24)
             (watermark as NSString).draw(in: wmRect, withAttributes: wmAttrs)
         }
     }

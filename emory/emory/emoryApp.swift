@@ -11,9 +11,15 @@ import MWDATCore
 @main
 struct emoryApp: App {
 
-    init() {
+    // SDK configured lazily — only when glasses tab is used
+    static var isSDKConfigured = false
+
+    static func configureSDKIfNeeded() {
+        guard !isSDKConfigured else { return }
         do {
             try Wearables.configure()
+            isSDKConfigured = true
+            print("[App] Wearables SDK configured")
         } catch {
             print("[App] Failed to configure Wearables SDK: \(error)")
         }
@@ -22,8 +28,18 @@ struct emoryApp: App {
     var body: some Scene {
         WindowGroup {
             MainTabView()
+                .overlay {
+                    TouchInterceptView {
+                        InactivityManager.shared.userDidInteract()
+                    }
+                    .allowsHitTesting(true)
+                }
+                .overlay {
+                    InactivityReminderView()
+                }
                 .onOpenURL { url in
                     Task {
+                        emoryApp.configureSDKIfNeeded()
                         try? await Wearables.shared.handleUrl(url)
                     }
                 }
