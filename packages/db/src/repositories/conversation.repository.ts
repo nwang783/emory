@@ -187,6 +187,18 @@ export class ConversationRepository {
   }
 
   addMemories(input: CreatePersonMemoryInput[]): PersonMemory[] {
+    console.log('[memory-repo] addMemories called', {
+      requestedCount: input.length,
+      memories: input.map((item) => ({
+        personId: item.personId,
+        recordingId: item.recordingId ?? null,
+        memoryType: item.memoryType,
+        memoryDate: item.memoryDate,
+        memoryText: item.memoryText,
+        confidence: item.confidence ?? null,
+      })),
+    })
+
     const db = this.adapter.getDb()
     const insert = db.prepare(`
       INSERT INTO person_memories (
@@ -225,7 +237,10 @@ export class ConversationRepository {
 
     tx(input)
 
-    if (insertedIds.length === 0) return []
+    if (insertedIds.length === 0) {
+      console.log('[memory-repo] addMemories inserted nothing')
+      return []
+    }
 
     const placeholders = insertedIds.map(() => '?').join(', ')
     const rows = db
@@ -237,7 +252,12 @@ export class ConversationRepository {
     `)
       .all(...insertedIds) as PersonMemoryRow[]
 
-    return rows.map(rowToPersonMemory)
+    const insertedMemories = rows.map(rowToPersonMemory)
+    console.log('[memory-repo] addMemories inserted rows', {
+      insertedCount: insertedMemories.length,
+      memoryIds: insertedMemories.map((memory) => memory.id),
+    })
+    return insertedMemories
   }
 
   getMemoriesByPerson(personId: string, limit: number = 20): PersonMemory[] {

@@ -53,6 +53,34 @@ function uniqueRecordings(recordings: ConversationRecording[]): ConversationReco
   })
 }
 
+function summarizePerson(person: Person) {
+  return {
+    id: person.id,
+    name: person.name,
+    relationship: person.relationship,
+  }
+}
+
+function summarizeMemory(memory: PersonMemory) {
+  return {
+    id: memory.id,
+    personId: memory.personId,
+    memoryType: memory.memoryType,
+    memoryDate: memory.memoryDate,
+    memoryText: memory.memoryText,
+  }
+}
+
+function summarizeRecording(recording: ConversationRecording) {
+  return {
+    id: recording.id,
+    personId: recording.personId,
+    recordedAt: recording.recordedAt,
+    transcriptStatus: recording.transcriptStatus,
+    extractionStatus: recording.extractionStatus,
+  }
+}
+
 export class MemoryQueryService {
   constructor(
     private conversationRepo: ConversationRepository,
@@ -63,9 +91,21 @@ export class MemoryQueryService {
   ) {}
 
   async queryFromAudio(input: QueryMemoriesInput): Promise<QueryMemoriesResult> {
+    console.log('[memory-query] audio query start', {
+      audioPath: input.audioPath,
+      mimeType: input.mimeType,
+      askedAt: input.askedAt ?? null,
+    })
+
     const transcript = await this.deepgramService.transcribeFile({
       audioPath: input.audioPath,
       mimeType: input.mimeType,
+    })
+
+    console.log('[memory-query] audio transcript complete', {
+      provider: transcript.provider,
+      transcriptLength: transcript.text.length,
+      transcriptPreview: transcript.text.slice(0, 160),
     })
 
     return this.queryFromText({
@@ -82,15 +122,34 @@ export class MemoryQueryService {
 
     const askedAt = input.askedAt ?? new Date().toISOString()
     const selfPerson = this.peopleRepo.findSelf()
+    console.log('[memory-query] text query start', {
+      askedAt,
+      queryText,
+      selfPersonId: selfPerson?.id ?? null,
+    })
     const plan = await this.understandingService.understandQuery({
       queryText,
       askedAt,
       selfName: selfPerson?.name ?? null,
     })
 
+    console.log('[memory-query] plan resolved', {
+      queryText,
+      askedAt,
+      plan,
+    })
+
     const matchedPeople = this.resolveMatchedPeople(plan, selfPerson)
     const matchedMemories = this.resolveMatchedMemories(plan, selfPerson, matchedPeople)
     const matchedRecordings = this.resolveMatchedRecordings(plan, selfPerson, matchedPeople)
+    console.log('[memory-query] retrieval complete', {
+      matchedPeopleCount: matchedPeople.length,
+      matchedMemoryCount: matchedMemories.length,
+      matchedRecordingCount: matchedRecordings.length,
+      matchedPeople: matchedPeople.map((person) => summarizePerson(person)),
+      matchedMemories: matchedMemories.map((memory) => summarizeMemory(memory)),
+      matchedRecordings: matchedRecordings.map((recording) => summarizeRecording(recording)),
+    })
     const answer = await this.answerService.buildAnswer({
       askedAt,
       queryText,
@@ -99,6 +158,12 @@ export class MemoryQueryService {
       matchedPeople,
       matchedMemories,
       matchedRecordings,
+    })
+
+    console.log('[memory-query] answer complete', {
+      answerText: answer.answerText,
+      citationsCount: answer.citations.length,
+      confidence: answer.confidence,
     })
 
     return {

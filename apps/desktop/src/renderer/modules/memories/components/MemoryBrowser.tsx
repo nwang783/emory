@@ -348,7 +348,7 @@ export function MemoryBrowser(): React.JSX.Element {
   }
 
   return (
-    <section className="flex h-full flex-col">
+    <section className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between px-6 pt-6 pb-3">
         <h2 className="text-lg font-semibold tracking-tight">Memories</h2>
         <span className="text-xs text-muted-foreground">
@@ -392,13 +392,13 @@ export function MemoryBrowser(): React.JSX.Element {
       </div>
 
       {isLoading ? (
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex min-h-0 flex-1 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : memories.length === 0 ? (
         <EmptyState />
       ) : (
-        <ScrollArea className="flex-1 px-3">
+        <ScrollArea className="min-h-0 flex-1 px-3">
           <div className="flex flex-col gap-0.5 pb-4">
             {memories.map((memory) => (
               <MemoryRow
