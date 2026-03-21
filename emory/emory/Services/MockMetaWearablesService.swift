@@ -17,7 +17,7 @@ final class MockMetaWearablesService: MetaWearablesService {
     // Continuations for async streams
     private var connectionContinuation: AsyncStream<ConnectionState>.Continuation?
     private var sessionContinuation: AsyncStream<SessionState>.Continuation?
-    private var frameContinuation: AsyncStream<UIImage>.Continuation?
+    private var frameContinuation: AsyncStream<VideoFrameData>.Continuation?
     private var audioContinuation: AsyncStream<Bool>.Continuation?
 
     // Cached renderer to avoid re-creating every frame
@@ -43,7 +43,7 @@ final class MockMetaWearablesService: MetaWearablesService {
         }
     }()
 
-    lazy var videoFrameStream: AsyncStream<UIImage> = {
+    lazy var videoFrameStream: AsyncStream<VideoFrameData> = {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { [weak self] continuation in
             self?.frameContinuation = continuation
         }
@@ -79,7 +79,7 @@ final class MockMetaWearablesService: MetaWearablesService {
             while !Task.isCancelled {
                 guard let self = self else { break }
                 let frame = self.generateSyntheticFrame()
-                self.frameContinuation?.yield(frame)
+                self.frameContinuation?.yield(VideoFrameData(image: frame))
                 self.frameCount += 1
                 try? await Task.sleep(nanoseconds: 66_000_000) // ~15fps
             }

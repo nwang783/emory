@@ -1,4 +1,5 @@
 import UIKit
+import CoreMedia
 
 // Conditional import — this file only compiles when the Meta DAT SDK
 // is added via SPM. Until then, the app uses MockMetaWearablesService.
@@ -8,12 +9,8 @@ import MWDATCamera
 
 // MARK: - Real Meta Wearables Service
 // Wraps the Meta Wearables DAT SDK for actual glasses connectivity.
-//
-// Integration steps (do these in Xcode BEFORE this file will compile):
-// 1. File → Add Package Dependencies
-// 2. URL: https://github.com/facebook/meta-wearables-dat-ios
-// 3. Add products: MWDATCore, MWDATCamera (and MWDATMockDevice for testing)
-// 4. Link to your app target
+// Uses HEVC (.hvc1) codec for hardware-accelerated encoding on the glasses.
+// Forwards CMSampleBuffer directly to avoid unnecessary UIImage conversions.
 
 @MainActor
 final class RealMetaWearablesService: MetaWearablesService {
@@ -25,10 +22,9 @@ final class RealMetaWearablesService: MetaWearablesService {
     private var listenerTokens: [AnyListenerToken] = []
     private let audioDetector = AudioRouteDetector()
 
-    // Continuations for async streams (nonisolated-safe via @unchecked Sendable wrapper)
     private var connectionContinuation: AsyncStream<ConnectionState>.Continuation?
     private var sessionContinuation: AsyncStream<SessionState>.Continuation?
-    private var frameContinuation: AsyncStream<UIImage>.Continuation?
+    private var frameContinuation: AsyncStream<VideoFrameData>.Continuation?
 
     // MARK: - Streams
 
@@ -46,20 +42,17 @@ final class RealMetaWearablesService: MetaWearablesService {
         }
     }()
 
-    lazy var videoFrameStream: AsyncStream<UIImage> = {
+    lazy var videoFrameStream: AsyncStream<VideoFrameData> = {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             self.frameContinuation = continuation
         }
     }()
 
     lazy var audioStatusStream: AsyncStream<Bool> = {
-        // Use AVAudioSession-based detection since the Meta DAT SDK
-        // has no audio API. Detects Bluetooth routes from Ray-Ban glasses.
         audioDetector.audioAvailabilityStream()
     }()
 
     // MARK: - SDK Initialization
-    // Call this ONCE at app launch (e.g., in App.init)
 
     static func configure() throws {
         try Wearables.configure()
@@ -79,7 +72,6 @@ final class RealMetaWearablesService: MetaWearablesService {
             try await wearables.startRegistration()
             print("[DAT] startRegistration() returned, waiting for .registered state...")
 
-            // Wait for registration to complete
             for await state in wearables.registrationStateStream() {
                 print("[DAT] Registration state changed: \(state)")
                 if state == .registered {
@@ -101,7 +93,6 @@ final class RealMetaWearablesService: MetaWearablesService {
         }
 
         // Step 3: Wait for a device to appear
-        // Devices won't show until permission is granted
         print("[DAT] Waiting for device to appear in devicesStream...")
         var foundDevice = false
         for await devices in wearables.devicesStream() {
@@ -121,13 +112,13 @@ final class RealMetaWearablesService: MetaWearablesService {
             return
         }
 
-        // Step 4: Create stream session with auto device selector
+        // Step 4: Create stream session — use HEVC for hardware encoding on glasses
         let selector = AutoDeviceSelector(wearables: wearables)
         self.deviceSelector = selector
 
         let config = StreamSessionConfig(
-            videoCodec: .raw,
-            resolution: .high,      // 720x1280
+            videoCodec: .raw,        // Raw frames — makeUIImage works, bridge gets JPEG fallback
+            resolution: .high,       // 720x1280
             frameRate: 15
         )
 
@@ -138,8 +129,6 @@ final class RealMetaWearablesService: MetaWearablesService {
         self.streamSession = session
 
         // Subscribe to session state changes
-        // Use [weak self] and access continuations at call time, not capture time,
-        // because lazy var streams may not have been accessed yet when start() runs.
         let stateToken = session.statePublisher.listen { [weak self] state in
             print("[DAT] Session state: \(state)")
             Task { @MainActor in
@@ -156,14 +145,25 @@ final class RealMetaWearablesService: MetaWearablesService {
         }
         listenerTokens.append(stateToken)
 
-        // Subscribe to video frames
+        // Subscribe to video frames — always yield, even if UIImage creation fails
         let frameToken = session.videoFramePublisher.listen { [weak self] frame in
-            if let image = frame.makeUIImage() {
-                print("[DAT] Got frame: \(Int(image.size.width))x\(Int(image.size.height))")
-                Task { @MainActor in
-                    guard let self = self else { return }
-                    self.frameContinuation?.yield(image)
-                    self.updateCurrentFrame(image)
+            let sampleBuffer = frame.sampleBuffer
+            let image = frame.makeUIImage() // May be nil with HEVC codec
+
+            let frameData: VideoFrameData
+            if let image = image {
+                frameData = VideoFrameData(sampleBuffer: sampleBuffer, image: image)
+            } else {
+                frameData = VideoFrameData(sampleBuffer: sampleBuffer)
+            }
+
+            print("[DAT] Got frame (image=\(image != nil ? "yes" : "nil"), sbuf=yes)")
+
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.frameContinuation?.yield(frameData)
+                if let image = image {
+                    self.currentFrame = image
                 }
             }
         }
@@ -202,10 +202,7 @@ final class RealMetaWearablesService: MetaWearablesService {
             await session.stop()
         }
         streamSession = nil
-
-        // Cancel all listener subscriptions
         listenerTokens.removeAll()
-
         sessionContinuation?.yield(.idle)
         connectionContinuation?.yield(.disconnected)
     }
@@ -216,19 +213,12 @@ final class RealMetaWearablesService: MetaWearablesService {
         return currentFrame
     }
 
-    // Keep a reference to the latest frame for snapshot use
     private var currentFrame: UIImage?
-
-    func updateCurrentFrame(_ image: UIImage) {
-        currentFrame = image
-    }
 }
 
 #else
 
 // MARK: - Stub when SDK not imported
-// This allows the project to compile without the Meta DAT SDK.
-// The app will use MockMetaWearablesService until the SDK is added.
 
 final class RealMetaWearablesService: MetaWearablesService {
     var connectionStateStream: AsyncStream<ConnectionState> {
@@ -237,7 +227,7 @@ final class RealMetaWearablesService: MetaWearablesService {
     var sessionStateStream: AsyncStream<SessionState> {
         AsyncStream { $0.yield(.idle); $0.finish() }
     }
-    var videoFrameStream: AsyncStream<UIImage> {
+    var videoFrameStream: AsyncStream<VideoFrameData> {
         AsyncStream { $0.finish() }
     }
     var audioStatusStream: AsyncStream<Bool> {
