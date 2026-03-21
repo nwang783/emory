@@ -77,6 +77,7 @@ The mobile streaming bridge is represented in `apps/mobile`, but it is still ear
 - **Transcription layer:** Deepgram speech-to-text
 - **Memory layer:** OpenRouter LLM extracts structured memories from transcripts
 - **Recall layer:** show or speak short summaries about the recognized person during future encounters, and answer simple spoken questions like "Who is Ryan?" or "What did I do at 2 PM today?"
+- **Speech output layer:** synthesize short spoken answers through Cartesia and play them locally on desktop today, with the same response shape ready to move to the iPhone relay later
 
 ## Architecture Notes
 
@@ -106,7 +107,13 @@ DEEPGRAM_API_KEY=...
 OPENROUTER_API_KEY=...
 MEMORY_EXTRACTION_MODEL=openai/gpt-4.1-mini
 MEMORY_QUERY_MODEL=openai/gpt-4.1-mini
+CARTESIA_API_KEY=...
+CARTESIA_MODEL_ID=sonic-3
+CARTESIA_VOICE_ID=6ccbfb76-1fc6-48f7-b71d-91ac6298247b
+SAVE_TTS_DEBUG_AUDIO=0
 ```
+
+In development, Cartesia responses are also saved under the Electron user-data `tts/` folder for debugging. You can force that on in other environments with `SAVE_TTS_DEBUG_AUDIO=1`.
 
 The desktop face pipeline also expects the ONNX face models used by `@emory/core`.
 
