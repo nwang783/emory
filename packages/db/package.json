@@ -18,6 +18,6 @@
     "@types/better-sqlite3": "^7",
     "@types/uuid": "^10",
     "typescript": "^5",
-    "vitest": "^3"
+    "vitest": "3"
   }
 }

@@ -1,11 +1,14 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
+import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerFaceIpc, disposeFaceService } from './ipc/face.ipc.js'
 import { registerDbIpc } from './ipc/db.ipc.js'
 import { registerEncounterIpc } from './ipc/encounter.ipc.js'
 import { registerUnknownIpc } from './ipc/unknown.ipc.js'
+import { registerConversationIpc } from './ipc/conversation.ipc.js'
 import { CleanupService } from './services/cleanup.service.js'
+import { getConversationsRootDir } from './services/conversation-storage.service.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -62,8 +65,16 @@ app.whenReady().then(() => {
 
   ipcMain.handle('app:get-models-dir', () => getModelsDir())
   ipcMain.handle('app:get-user-data-dir', () => app.getPath('userData'))
+  ipcMain.handle('app:get-conversations-dir', () => getConversationsRootDir())
+  ipcMain.handle('app:open-conversations-folder', async () => {
+    const dir = getConversationsRootDir()
+    await mkdir(dir, { recursive: true })
+    const err = await shell.openPath(dir)
+    if (err === '') return { success: true as const }
+    return { success: false as const, error: err }
+  })
 
-  const { peopleRepo, encounterRepo, unknownRepo, retentionRepo } = registerDbIpc()
+  const { peopleRepo, encounterRepo, unknownRepo, retentionRepo, conversationRepo } = registerDbIpc()
 
   const cleanupService = new CleanupService(retentionRepo, encounterRepo, unknownRepo)
   cleanupService.start()
@@ -72,6 +83,7 @@ app.whenReady().then(() => {
   registerFaceIpc(mainWindow, getModelsDir(), peopleRepo)
   registerEncounterIpc(mainWindow, encounterRepo)
   registerUnknownIpc(mainWindow, unknownRepo)
+  registerConversationIpc(conversationRepo, encounterRepo)
 
   app.on('before-quit', () => {
     cleanupService.stop()

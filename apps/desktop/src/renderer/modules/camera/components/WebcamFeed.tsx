@@ -8,6 +8,7 @@ import { usePeopleStore } from '@/shared/stores/people.store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { WhoIsThisButton } from './WhoIsThisButton'
+import { useConversationRecorder } from '../hooks/useConversationRecorder'
 
 const TRACK_IOU_THRESHOLD = 0.25
 const TRACK_EXPIRY_MS = 2000
@@ -101,10 +102,12 @@ function matchDetectionsToTracks(
 }
 
 export function WebcamFeed(): React.JSX.Element {
-  const { videoRef, canvasRef, isActive, error, start, stop, captureFrame } = useWebcam()
+  const { videoRef, canvasRef, isActive, error, cameraLabel, start, stop, captureFrame } = useWebcam()
   const overlayRef = useRef<HTMLCanvasElement | null>(null)
   const rafIdRef = useRef<number | null>(null)
   const tracksRef = useRef<FaceTrack[]>([])
+  const { phase: conversationPhase, error: conversationError, micLabel: conversationMicLabel } =
+    useConversationRecorder(isActive, tracksRef)
   const detectInFlightRef = useRef(false)
   const identifyInFlightRef = useRef(false)
   const [autoLearnCount, setAutoLearnCount] = useState(0)
@@ -290,11 +293,7 @@ export function WebcamFeed(): React.JSX.Element {
         if (track.identity && sessionIdRef.current) {
           if (now - track.lastEncounterLogAt > ENCOUNTER_LOG_COOLDOWN_MS) {
             track.lastEncounterLogAt = now
-            window.emoryApi.encounter.log(
-              sessionIdRef.current,
-              track.identity.personId,
-              track.identity.similarity,
-            ).catch(() => {})
+            window.emoryApi.encounter.log(track.identity.personId, track.identity.similarity).catch(() => {})
 
             addEvent({
               type: 'recognition',
@@ -541,6 +540,35 @@ export function WebcamFeed(): React.JSX.Element {
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {conversationError && (
+        <p className="text-sm text-destructive" role="status">
+          Conversation audio: {conversationError}
+        </p>
+      )}
+      {isActive && (
+        <p className="text-muted-foreground text-xs" role="status">
+          {cameraLabel ? (
+            <>
+              <span className="opacity-80">Camera: {cameraLabel}</span>
+              <br />
+            </>
+          ) : null}
+          {!conversationError ? (
+            <>
+              Conversation capture:{' '}
+              {conversationPhase === 'idle' && 'waiting for a recognised face'}
+              {conversationPhase === 'arming' && 'arming…'}
+              {conversationPhase === 'recording' && 'recording'}
+              {conversationMicLabel ? (
+                <>
+                  <br />
+                  <span className="opacity-80">Mic: {conversationMicLabel}</span>
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </p>
+      )}
 
       <div className="flex gap-3">
         {!isActive ? (

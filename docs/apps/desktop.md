@@ -8,6 +8,8 @@ The desktop app is the primary Emory client: it captures webcam frames, runs SCR
 
 **Active learning** (optional): when enabled, the renderer can request new embeddings for recognized faces at different poses; the main process enforces cooldown, diversity, and per-person caps before persisting rows with source `auto_learn` (see [Active learning](#active-learning)).
 
+**Conversation audio** (automatic): while the camera is on, the renderer can capture microphone audio when a **locked** face identity is primary (largest bbox); segments are saved under userData and recorded in `conversation_recordings` via IPC. See [Conversation recording](../architecture/conversation-recording.md).
+
 ## Architecture
 
 ```
@@ -24,9 +26,11 @@ apps/desktop/
     │   │   ├── db.ipc.ts             # Database IPC handlers
     │   │   ├── encounter.ipc.ts      # Encounter/session IPC handlers
     │   │   ├── face.ipc.ts           # Face processing IPC handlers
-    │   │   └── unknown.ipc.ts        # Unknown person tracking IPC handlers
+    │   │   ├── unknown.ipc.ts        # Unknown person tracking IPC handlers
+    │   │   └── conversation.ipc.ts   # Conversation audio save + recording queries
     │   └── services/
-    │       └── cleanup.service.ts    # Periodic data retention cleanup job
+    │       ├── cleanup.service.ts    # Periodic data retention cleanup job
+    │       └── conversation-storage.service.ts # Write audio files under userData/conversations
     ├── preload/
     │   ├── index.ts                  # Context bridge API
     │   └── types.d.ts                # Window type augmentation
@@ -39,10 +43,13 @@ apps/desktop/
         ├── modules/
         │   ├── camera/
         │   │   ├── components/
-        │   │   │   ├── WebcamFeed.tsx     # Detection + identify loops, overlays, auto-learn
+        │   │   │   ├── WebcamFeed.tsx     # Detection + identify loops, overlays, auto-learn, conversation recorder
         │   │   │   └── WhoIsThisButton.tsx # Voice announcement of identified people
-        │   │   └── hooks/
-        │   │       └── useWebcam.ts   # Webcam lifecycle management
+        │   │   ├── hooks/
+        │   │   │   ├── useWebcam.ts   # Webcam lifecycle management
+        │   │   │   └── useConversationRecorder.ts # Mic + MediaRecorder driven by face tracks
+        │   │   └── lib/
+        │   │       └── primarySubject.ts # Largest-bbox primary among identified tracks
         │   ├── people/
         │   │   └── components/
         │   │       ├── PeopleList.tsx         # Grid of person cards; loading & empty states
@@ -53,7 +60,7 @@ apps/desktop/
         │   │       └── RegisterFaceModal.tsx  # New person registration: inline viewfinder + upload
         │   ├── settings/
         │   │   └── components/
-        │   │       └── SettingsPanel.tsx      # Recognition, display & performance settings
+        │   │       └── SettingsPanel.tsx      # Recognition, display, performance, conversation storage path, retention
         │   ├── activity/
         │   │   └── components/
         │   │       └── ActivityFeed.tsx       # Timestamped event log
@@ -93,8 +100,8 @@ apps/desktop/
 | Layer | Responsibility |
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
-| **Services** (`src/main/services/`) | Background services running in the main process. `CleanupService` runs a daily data retention job that deletes old encounters and unknown sightings based on user-configured retention policies stored in `retention_config`. |
-| **IPC Handlers** (`src/main/ipc/`) | Bridge between renderer requests and backend services. `db.ipc.ts` wraps `PeopleRepository` (people + embeddings CRUD, **`db:people:get-self`** / **`db:people:set-self`** for the connection-web “me” person), `RelationshipRepository` (**duplicate pair rejected** on create), and `RetentionRepository`; `encounter.ipc.ts` wraps `EncounterRepository` (session + encounter lifecycle); `face.ipc.ts` wraps `FaceService` plus auto-learn persistence rules (cooldown, diversity, caps, server-side embedding verification); `unknown.ipc.ts` wraps `UnknownSightingRepository` for tracking unrecognized faces. |
+| **Services** (`src/main/services/`) | Background services running in the main process. `CleanupService` runs a daily data retention job that deletes old encounters and unknown sightings based on user-configured retention policies stored in `retention_config`. `ConversationStorageService` writes conversation audio files under **`userData/conversations/YYYY/MM/`**. |
+| **IPC Handlers** (`src/main/ipc/`) | Bridge between renderer requests and backend services. `db.ipc.ts` wraps `PeopleRepository` (people + embeddings CRUD, **`db:people:get-self`** / **`db:people:set-self`** for the connection-web “me” person), `RelationshipRepository` (**duplicate pair rejected** on create), `RetentionRepository`, and **`ConversationRepository`**; `encounter.ipc.ts` wraps `EncounterRepository` (session + encounter lifecycle); `face.ipc.ts` wraps `FaceService` plus auto-learn persistence rules (cooldown, diversity, caps, server-side embedding verification); `unknown.ipc.ts` wraps `UnknownSightingRepository` for tracking unrecognized faces; **`conversation.ipc.ts`** saves audio blobs and inserts **`conversation_recordings`** rows (STT/parse deferred). |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
 
@@ -314,16 +321,34 @@ Session state is managed in-process: `encounter:start-session` stores the active
 
 `unknown:track` is an upsert — if an active sighting with the given `tempId` exists, it updates it (incrementing sighting count and optionally improving the best embedding); otherwise it creates a new sighting. Embeddings are passed as plain `number[]` over IPC and reconstructed as `Float32Array` in the main process.
 
+### Conversation recording operations
+
+| Channel | Direction | Payload | Returns |
+|---|---|---|---|
+| `conversation:save-and-process` | Renderer → Main | `{ personId, recordedAt, mimeType, durationMs?, audioBytes }` | `{ success: true, recording }` or `{ success: false, error }` |
+| `conversation:get-recordings-by-person` | Renderer → Main | `personId, limit?` | `ConversationRecording[]` |
+| `conversation:get-memories-by-person` | Renderer → Main | `personId, limit?` | `PersonMemory[]` |
+
+`save-and-process` writes the file first, then inserts the DB row. If the insert fails, the file is removed. `encounter_id` is resolved from the active session when possible (see `getActiveSessionId` in `encounter.ipc.ts`). Transcript and parse steps are **not** run in this slice; statuses start as **`pending`**.
+
+| Preload method | Maps to |
+|---|---|
+| `emoryApi.conversation.saveAndProcess(input)` | `conversation:save-and-process` (`audioBytes` as `ArrayBuffer` → `Uint8Array` in preload) |
+| `emoryApi.conversation.getRecordingsByPerson(personId, limit?)` | `conversation:get-recordings-by-person` |
+| `emoryApi.conversation.getMemoriesByPerson(personId, limit?)` | `conversation:get-memories-by-person` |
+
 ### App Operations
 
 | Channel | Direction | Returns |
 |---|---|---|
 | `app:get-models-dir` | Renderer → Main | `string` (path to models directory) |
 | `app:get-user-data-dir` | Renderer → Main | `string` (Electron userData path) |
+| `app:get-conversations-dir` | Renderer → Main | `string` (absolute path to `<userData>/conversations`) |
+| `app:open-conversations-folder` | Renderer → Main | `{ success: true }` or `{ success: false, error }` (creates root folder if missing, then `shell.openPath`) |
 
 ### Preload surface (`window.emoryApi`)
 
-The preload script exposes `window.emoryApi` — `face`, `db` (people, relationships, retention, embeddings), `encounter`, `unknown`, and `app` namespaces. Methods map 1:1 to channels in the tables above (including **`relationships.getAll`** → `db:relationships:get-all` and **`embeddings.*`** → `db:embeddings:*`).
+The preload script exposes `window.emoryApi` — `face`, `db` (people, relationships, retention, embeddings), `encounter`, `unknown`, **`conversation`**, and `app` namespaces. Methods map 1:1 to channels in the tables above (including **`relationships.getAll`** → `db:relationships:get-all` and **`embeddings.*`** → `db:embeddings:*`).
 
 | Method | Maps to |
 |---|---|
@@ -373,6 +398,8 @@ The preload script exposes `window.emoryApi` — `face`, `db` (people, relations
 | `emoryApi.unknown.findById(id)` | `unknown:find-by-id` |
 | `emoryApi.app.getModelsDir()` | `app:get-models-dir` |
 | `emoryApi.app.getUserDataDir()` | `app:get-user-data-dir` |
+| `emoryApi.app.getConversationsDir()` | `app:get-conversations-dir` |
+| `emoryApi.app.openConversationsFolder()` | `app:open-conversations-folder` |
 
 ## IPC Data Serialization
 
@@ -422,7 +449,7 @@ Subtitle under the product name: **Memory Assistant** (`Header.tsx`).
 | `Header` | `shared/components/Header.tsx` | Brain icon, **Emory** + **Memory Assistant**, model status badge, shortcut to Settings tab |
 | `Sidebar` | `shared/components/Sidebar.tsx` | Vertical icon nav — Camera, People, Connections, Activity, Analytics, Embeddings, Settings |
 | `StatusBar` | `shared/components/StatusBar.tsx` | Model status, FPS, face count, identified count, processing time, optional “identifying…”, optional auto-learn total, error line |
-| `SettingsPanel` | `modules/settings/components/SettingsPanel.tsx` | Four card sections: Recognition (thresholds, auto-learn), Display (overlays), Performance (intervals), Data Retention (cleanup policies) |
+| `SettingsPanel` | `modules/settings/components/SettingsPanel.tsx` | Card sections: Recognition (thresholds, auto-learn), Display (overlays), Performance (intervals), **Conversation recordings** (path + open folder), Data Retention (cleanup policies) |
 | `PeopleList` | `modules/people/components/PeopleList.tsx` | People list with scroll area, loading skeletons, empty state. Accepts `fullWidth` prop for grid vs sidebar layout |
 | `PersonCard` | `modules/people/components/PersonCard.tsx` | Person card: avatar initials, relationship badge, embedding count, relative last-seen time, edit/delete actions |
 | `EditPersonModal` | `modules/people/components/EditPersonModal.tsx` | Dialog for editing person basic info + rich profile (key facts, conversation starters, important dates, last topics). **This is me** toggle calls `db.people.setSelf` / `getSelf` (clears previous self). Uses `ScrollArea` for compact layout. Saves via `db.people.update` + `db.people.updateProfile` |
@@ -491,7 +518,7 @@ Other defaults: `autoLearnEnabled: true`, `detectionThreshold: 0.35`, `matchThre
 
 `detectionThreshold` and `matchThreshold` from `settings.store` are synced to the main process via `face:update-thresholds` IPC. The store subscribes to its own state changes and pushes updated values whenever either threshold changes. The IPC handler stores these in module-level variables which are passed through to `faceService.detectFaces()` and `faceService.findBestMatch()` on every frame.
 
-Webcam resolution: **640×480** ideal (`useWebcam`).
+Webcam resolution: **640×480** ideal (`useWebcam`). While the camera is active, the UI shows **Camera:** plus `MediaStreamTrack.label` from the bound video track (same idea as conversation **Mic:** from the audio track).
 
 ### Models Directory
 ONNX model files must be placed in `{userData}/models/`:

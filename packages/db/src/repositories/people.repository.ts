@@ -293,6 +293,8 @@ export class PeopleRepository {
     const doMerge = db.transaction(() => {
       db.prepare('UPDATE face_embeddings SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
       db.prepare('UPDATE encounters SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
+      db.prepare('UPDATE conversation_recordings SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
+      db.prepare('UPDATE person_memories SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
       db.prepare(
         'UPDATE relationships SET person_a_id = ? WHERE person_a_id = ?'
       ).run(keepId, mergeId)

@@ -134,6 +134,27 @@ const emoryApi = {
   app: {
     getModelsDir: (): Promise<string> => ipcRenderer.invoke('app:get-models-dir'),
     getUserDataDir: (): Promise<string> => ipcRenderer.invoke('app:get-user-data-dir'),
+    getConversationsDir: (): Promise<string> => ipcRenderer.invoke('app:get-conversations-dir'),
+    openConversationsFolder: (): Promise<{ success: true } | { success: false; error: string }> =>
+      ipcRenderer.invoke('app:open-conversations-folder'),
+  },
+
+  conversation: {
+    saveAndProcess: (input: {
+      personId: string
+      recordedAt: string
+      mimeType: string
+      durationMs?: number | null
+      audioBytes: ArrayBuffer
+    }) =>
+      ipcRenderer.invoke('conversation:save-and-process', {
+        ...input,
+        audioBytes: new Uint8Array(input.audioBytes),
+      }),
+    getRecordingsByPerson: (personId: string, limit?: number) =>
+      ipcRenderer.invoke('conversation:get-recordings-by-person', personId, limit),
+    getMemoriesByPerson: (personId: string, limit?: number) =>
+      ipcRenderer.invoke('conversation:get-memories-by-person', personId, limit),
   },
 } as const
 

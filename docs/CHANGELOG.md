@@ -1,5 +1,26 @@
 # Documentation changelog
 
+## 2026-03-21 — Camera device label in camera view
+
+- **`useWebcam` + `WebcamFeed`** — After `getUserMedia`, the first video track’s `label` is shown as **Camera: …** above conversation/mic status. Helps verify which device Chromium actually bound (vs Windows “default” camera).
+
+## 2026-03-21 — Settings: conversation recordings folder
+
+- **Settings** — “Conversation recordings” card: shows storage path and **Open folder** (IPC `app:get-conversations-dir`, `app:open-conversations-folder`). Root path helper `getConversationsRootDir()` in `conversation-storage.service.ts`.
+
+## 2026-03-21 — Encounter logging fix
+
+- **`WebcamFeed` + `encounter.log`** — The renderer was passing `(sessionId, personId, similarity)` while the preload API only forwards `(personId, confidence)`, so the session UUID was incorrectly stored as `person_id`. Calls now use `(personId, similarity)` so encounter rows match the recognised person.
+
+## 2026-03-21 — Conversation recording (face-linked audio)
+
+- **Schema v6** — `conversation_recordings` and `person_memories` tables, `ConversationRepository`, merge reparenting for both tables.
+- **Main** — `ConversationStorageService`, `conversation.ipc.ts` (`save-and-process`, get-by-person queries), registration from `main/index.ts`; `registerDbIpc` exposes `conversationRepo`.
+- **Renderer** — `useConversationRecorder` + `primarySubject` (largest bbox primary, start/stop debounce, frozen `personId`); `WebcamFeed` shows capture status and mic errors.
+- **Docs** — `docs/architecture/conversation-recording.md`, updates to `docs/apps/desktop.md`, `docs/packages/db.md`, `docs/README.md`.
+- **Vitest** — `packages/db/vitest.config.ts` import fixed (`vitest/config`). Repository tests require a **native `better-sqlite3` build** matching the local Node/Bun ABI.
+
+
 ## 2026-03-21 — Production polish + integration wiring
 
 - **Encounter logging** — `WebcamFeed` starts/ends sessions on camera start/stop, logs encounters with cooldown when faces are recognised.

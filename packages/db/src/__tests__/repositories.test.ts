@@ -5,6 +5,7 @@ import { EncounterRepository } from '../repositories/encounter.repository.js'
 import { UnknownSightingRepository } from '../repositories/unknown-sighting.repository.js'
 import { RelationshipRepository } from '../repositories/relationship.repository.js'
 import { RetentionRepository } from '../repositories/retention.repository.js'
+import { ConversationRepository } from '../repositories/conversation.repository.js'
 
 function createTestAdapter(): SqliteAdapter {
   const adapter = new SqliteAdapter(':memory:')
@@ -251,6 +252,162 @@ describe('RelationshipRepository', () => {
 
     const found = relRepo.findBetween(b.id, a.id)
     expect(found).not.toBeNull()
+  })
+})
+
+describe('ConversationRepository', () => {
+  let adapter: SqliteAdapter
+  let conversationRepo: ConversationRepository
+  let peopleRepo: PeopleRepository
+  let encounterRepo: EncounterRepository
+
+  beforeEach(() => {
+    adapter = createTestAdapter()
+    conversationRepo = new ConversationRepository(adapter)
+    peopleRepo = new PeopleRepository(adapter)
+    encounterRepo = new EncounterRepository(adapter)
+  })
+
+  it('creates a recording with pending statuses', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    expect(rec.transcriptStatus).toBe('pending')
+    expect(rec.parseStatus).toBe('pending')
+    expect(rec.personId).toBe(person.id)
+  })
+
+  it('sets transcript and marks complete', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    const updated = conversationRepo.setTranscript(rec.id, 'hello world', 'stub')
+    expect(updated!.transcriptText).toBe('hello world')
+    expect(updated!.transcriptStatus).toBe('complete')
+    expect(updated!.transcriptProvider).toBe('stub')
+  })
+
+  it('marks transcript failed without removing row', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    const updated = conversationRepo.markTranscriptFailed(rec.id, 'STT down')
+    expect(updated!.transcriptStatus).toBe('failed')
+    expect(updated!.transcriptError).toBe('STT down')
+    expect(conversationRepo.findRecordingById(rec.id)).not.toBeNull()
+  })
+
+  it('marks parse failed but keeps transcript', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    conversationRepo.setTranscript(rec.id, 'still here')
+    const failed = conversationRepo.markParseFailed(rec.id, 'LLM error')
+    expect(failed!.parseStatus).toBe('failed')
+    expect(failed!.parseError).toBe('LLM error')
+    expect(failed!.transcriptText).toBe('still here')
+  })
+
+  it('inserts memories and queries by person newest first', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    conversationRepo.addMemories([
+      {
+        personId: person.id,
+        recordingId: rec.id,
+        memoryText: 'older',
+        memoryDate: '2020-01-01T00:00:00.000Z',
+        sourceType: 'conversation',
+      },
+      {
+        personId: person.id,
+        recordingId: rec.id,
+        memoryText: 'newer',
+        memoryDate: '2025-01-01T00:00:00.000Z',
+        sourceType: 'conversation',
+      },
+    ])
+    const memories = conversationRepo.getMemoriesByPerson(person.id, 10)
+    expect(memories.length).toBe(2)
+    expect(memories[0].memoryText).toBe('newer')
+    expect(memories[1].memoryText).toBe('older')
+  })
+
+  it('getRecordingsByPerson returns only that person', () => {
+    const a = peopleRepo.create({ name: 'A' })
+    const b = peopleRepo.create({ name: 'B' })
+    conversationRepo.createRecording({
+      personId: a.id,
+      recordedAt: '2024-01-01T00:00:00.000Z',
+      audioPath: '/a.webm',
+      mimeType: 'audio/webm',
+    })
+    conversationRepo.createRecording({
+      personId: b.id,
+      recordedAt: '2024-06-01T00:00:00.000Z',
+      audioPath: '/b.webm',
+      mimeType: 'audio/webm',
+    })
+    const forA = conversationRepo.getRecordingsByPerson(a.id)
+    expect(forA.length).toBe(1)
+    expect(forA[0].personId).toBe(a.id)
+  })
+
+  it('stores encounter id when provided', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const session = encounterRepo.createSession()
+    const enc = encounterRepo.createEncounter(person.id, session.id, 0.9)
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      encounterId: enc.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    expect(rec.encounterId).toBe(enc.id)
+  })
+
+  it('deleting person cascades recordings and memories', () => {
+    const person = peopleRepo.create({ name: 'Ann' })
+    const rec = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: new Date().toISOString(),
+      audioPath: '/tmp/a.webm',
+      mimeType: 'audio/webm',
+    })
+    conversationRepo.addMemories([
+      {
+        personId: person.id,
+        recordingId: rec.id,
+        memoryText: 'm',
+        memoryDate: new Date().toISOString(),
+        sourceType: 'conversation',
+      },
+    ])
+    peopleRepo.delete(person.id)
+    expect(conversationRepo.findRecordingById(rec.id)).toBeNull()
+    expect(conversationRepo.getMemoriesByPerson(person.id).length).toBe(0)
   })
 })
 

@@ -7,6 +7,7 @@ import {
   UnknownSightingRepository,
   RelationshipRepository,
   RetentionRepository,
+  ConversationRepository,
 } from '@emory/db'
 import type { CreatePersonInput, RelationshipType, UpdatePersonInput } from '@emory/db'
 
@@ -33,6 +34,7 @@ type DbIpcResult = {
   unknownRepo: UnknownSightingRepository
   relationshipRepo: RelationshipRepository
   retentionRepo: RetentionRepository
+  conversationRepo: ConversationRepository
 }
 
 export function registerDbIpc(): DbIpcResult {
@@ -45,6 +47,7 @@ export function registerDbIpc(): DbIpcResult {
   const unknownRepo = new UnknownSightingRepository(adapter)
   const relationshipRepo = new RelationshipRepository(adapter)
   const retentionRepo = new RetentionRepository(adapter)
+  const conversationRepo = new ConversationRepository(adapter)
 
   // --- People handlers ---
 
@@ -148,5 +151,5 @@ export function registerDbIpc(): DbIpcResult {
     adapter.close()
   })
 
-  return { adapter, peopleRepo, encounterRepo, unknownRepo, relationshipRepo, retentionRepo }
+  return { adapter, peopleRepo, encounterRepo, unknownRepo, relationshipRepo, retentionRepo, conversationRepo }
 }

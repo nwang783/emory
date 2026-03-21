@@ -6,6 +6,8 @@ type UseWebcamResult = {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   isActive: boolean
   error: string | null
+  /** Label from `MediaStreamTrack` after the stream opens; empty labels fall back to a generic string. */
+  cameraLabel: string | null
   start: () => Promise<void>
   stop: () => void
   captureFrame: () => ArrayBuffer | null
@@ -17,10 +19,12 @@ export function useWebcam(): UseWebcamResult {
   const streamRef = useRef<MediaStream | null>(null)
   const [isActive, setIsActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cameraLabel, setCameraLabel] = useState<string | null>(null)
 
   const start = useCallback(async () => {
     try {
       setError(null)
+      setCameraLabel(null)
 
       const devices = await navigator.mediaDevices.enumerateDevices()
       const videoDevices = devices.filter((d) => d.kind === 'videoinput')
@@ -50,6 +54,10 @@ export function useWebcam(): UseWebcamResult {
         await videoRef.current.play()
       }
 
+      const videoTrack = stream.getVideoTracks()[0]
+      const label = videoTrack?.label?.trim()
+      setCameraLabel(label && label.length > 0 ? label : 'Default camera (no label)')
+
       setIsActive(true)
     } catch (err) {
       const name = err instanceof Error ? err.name : 'Unknown'
@@ -57,6 +65,7 @@ export function useWebcam(): UseWebcamResult {
       console.error('[Webcam] getUserMedia failed:', name, message)
       setError(`${name}: ${message}`)
       setIsActive(false)
+      setCameraLabel(null)
     }
   }, [])
 
@@ -74,6 +83,7 @@ export function useWebcam(): UseWebcamResult {
     }
 
     setIsActive(false)
+    setCameraLabel(null)
   }, [])
 
   const captureFrame = useCallback((): ArrayBuffer | null => {
@@ -102,5 +112,5 @@ export function useWebcam(): UseWebcamResult {
     }
   }, [])
 
-  return { videoRef, canvasRef, isActive, error, start, stop, captureFrame }
+  return { videoRef, canvasRef, isActive, error, cameraLabel, start, stop, captureFrame }
 }

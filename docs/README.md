@@ -4,8 +4,9 @@
 |-----|--------|
 | [apps/desktop.md](./apps/desktop.md) | Electron app: 7-tab layout, IPC, preload, stores, UI components |
 | [packages/core.md](./packages/core.md) | Face engine, quality, liveness, appearance, grading services |
-| [packages/db.md](./packages/db.md) | SQLite adapter, repositories, schema v4 (indexes), retention |
+| [packages/db.md](./packages/db.md) | SQLite adapter, repositories, schema through v6 (indexes, conversations), retention |
 | [architecture/cloud-sync.md](./architecture/cloud-sync.md) | Cloud sync protocol design and migration path |
+| [architecture/conversation-recording.md](./architecture/conversation-recording.md) | Face-linked mic capture, debounce rules, IPC + storage layout |
 
 Start with **desktop** for end-to-end behaviour, then **core** / **db** for types and persistence.
 

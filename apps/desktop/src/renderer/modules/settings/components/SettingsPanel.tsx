@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { FolderOpen, RotateCcw } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
@@ -145,10 +145,84 @@ function PerformanceSettings(): React.JSX.Element {
 const ENCOUNTER_RETENTION_DEFAULT = 90
 const UNKNOWN_RETENTION_DEFAULT = 30
 
+/** When preload is older than main, `getConversationsDir` may be missing; mirror main `getConversationsRootDir()`. */
+function conversationsDirFromUserData(userDataPath: string): string {
+  const trimmed = userDataPath.replace(/[/\\]+$/, '')
+  const sep = trimmed.includes('\\') ? '\\' : '/'
+  return `${trimmed}${sep}conversations`
+}
+
+async function resolveConversationsDir(): Promise<string> {
+  const api = window.emoryApi.app
+  if (typeof api.getConversationsDir === 'function') {
+    return api.getConversationsDir()
+  }
+  return conversationsDirFromUserData(await api.getUserDataDir())
+}
+
 type RetentionState = {
   encounterDays: number
   unknownDays: number
   keepImportant: boolean
+}
+
+function ConversationStorageSettings(): React.JSX.Element {
+  const [pathStr, setPathStr] = useState<string | null>(null)
+  const [openError, setOpenError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void resolveConversationsDir()
+      .then(setPathStr)
+      .catch(() => setPathStr(null))
+  }, [])
+
+  const openFolder = useCallback(async () => {
+    setOpenError(null)
+    const api = window.emoryApi.app
+    if (typeof api.openConversationsFolder !== 'function') {
+      setOpenError('Restart the app once so the preload script updates, then try again. You can copy the path above and open it manually.')
+      return
+    }
+    const result = await api.openConversationsFolder()
+    if (!result.success) setOpenError(result.error)
+  }, [])
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-sm">Conversation recordings</CardTitle>
+        <CardDescription className="text-xs">
+          Audio segments are saved under your app data folder, organized by year and month (
+          <span className="font-mono">…/conversations/YYYY/MM/</span>
+          ).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {pathStr ? (
+          <p className="break-all rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+            {pathStr}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">Could not resolve storage path.</p>
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-fit gap-2"
+          onClick={() => void openFolder()}
+          disabled={!pathStr}
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+          Open folder
+        </Button>
+        {openError ? (
+          <p className="text-xs text-destructive" role="alert">
+            {openError}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
 }
 
 function RetentionSettings(): React.JSX.Element {
@@ -297,6 +371,7 @@ export function SettingsPanel(): React.JSX.Element {
         <RecognitionSettings />
         <DisplaySettings />
         <PerformanceSettings />
+        <ConversationStorageSettings />
         <RetentionSettings />
 
         <Button variant="outline" className="mt-2 self-start gap-2" onClick={resetToDefaults}>

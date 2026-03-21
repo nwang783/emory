@@ -20,7 +20,8 @@ packages/db/src/
     ├── encounter.repository.ts      # Sessions + encounters
     ├── unknown-sighting.repository.ts
     ├── relationship.repository.ts
-    └── retention.repository.ts      # retention_config rows
+    ├── retention.repository.ts      # retention_config rows
+    └── conversation.repository.ts   # conversation_recordings + person_memories
 ```
 
 ### Layers
@@ -41,6 +42,7 @@ packages/db/src/
 | `UnknownSightingRepository` | `unknown-sighting.repository.ts` | Unknown face upserts, status transitions, `deleteOldSightings` |
 | `RelationshipRepository` | `relationship.repository.ts` | Links between people; **`findAll()`** for full graph loads |
 | `RetentionRepository` | `retention.repository.ts` | Read/upsert `retention_config` |
+| `ConversationRepository` | `conversation.repository.ts` | Conversation audio metadata, transcript/parse status transitions, person memories |
 
 ## Schema
 
@@ -226,6 +228,51 @@ Migration `migrateToV5()` bumps **`CURRENT_SCHEMA_VERSION` to 5**.
 
 The domain type **`Person`** includes **`isSelf: boolean`** (derived from `is_self === 1`).
 
+### Version 6 (conversation recordings + memories)
+
+Migration `migrateToV6()` bumps **`CURRENT_SCHEMA_VERSION` to 6**.
+
+#### `conversation_recordings`
+
+Source row per captured audio segment: file path on disk, person link, optional encounter link, transcript fields, processing statuses.
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | TEXT | PRIMARY KEY (UUID) |
+| `person_id` | TEXT | NOT NULL, FK → `people(id)` ON DELETE CASCADE |
+| `encounter_id` | TEXT | FK → `encounters(id)` ON DELETE SET NULL |
+| `recorded_at` | TEXT | NOT NULL (ISO 8601) |
+| `audio_path` | TEXT | NOT NULL (absolute path under userData) |
+| `mime_type` | TEXT | NOT NULL |
+| `duration_ms` | INTEGER | |
+| `transcript_text` | TEXT | |
+| `transcript_status` | TEXT | NOT NULL: `pending` \| `complete` \| `failed` |
+| `transcript_provider` | TEXT | |
+| `transcript_error` | TEXT | STT failure detail |
+| `parse_status` | TEXT | NOT NULL: `pending` \| `complete` \| `failed` |
+| `parse_error` | TEXT | Memory-parse failure detail |
+| `created_at` / `updated_at` | TEXT | NOT NULL |
+
+**Indexes:** `idx_conversation_recordings_person_id`, `idx_conversation_recordings_recorded_at`, `idx_conversation_recordings_person_recorded_at`.
+
+#### `person_memories`
+
+Short memory lines derived from transcripts (populated when the parse pipeline exists).
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | TEXT | PRIMARY KEY |
+| `person_id` | TEXT | NOT NULL, FK → `people(id)` ON DELETE CASCADE |
+| `recording_id` | TEXT | FK → `conversation_recordings(id)` ON DELETE SET NULL |
+| `memory_text` | TEXT | NOT NULL |
+| `memory_date` | TEXT | NOT NULL |
+| `source_type` | TEXT | NOT NULL (e.g. `conversation`) |
+| `created_at` | TEXT | NOT NULL |
+
+**Indexes:** `idx_person_memories_person_id`, `idx_person_memories_memory_date`, `idx_person_memories_person_memory_date`.
+
+`PeopleRepository.mergePeople` reparents **`conversation_recordings`** and **`person_memories`** from the merged person to the kept person (same pattern as `encounters`).
+
 ## Usage
 
 ```typescript
@@ -290,7 +337,7 @@ The adapter uses a simple versioned migration system:
 2. Applies all migrations above the current version inside a transaction
 3. Each migration bumps the version number
 
-Each migration method (e.g. `migrateToV2()`, `migrateToV3()`, `migrateToV4()`) is idempotent — `CREATE TABLE IF NOT EXISTS` and try/catch around `ALTER TABLE` ensure safe re-runs. **V3** adds `thumbnail` and `quality_score` on `face_embeddings`. **V4** adds the indexes listed above.
+Each migration method (e.g. `migrateToV2()`, `migrateToV3()`, `migrateToV4()`) is idempotent — `CREATE TABLE IF NOT EXISTS` and try/catch around `ALTER TABLE` ensure safe re-runs. **V3** adds `thumbnail` and `quality_score` on `face_embeddings`. **V4** adds the indexes listed above. **V6** adds `conversation_recordings` and `person_memories` (see [Version 6](#version-6-conversation-recordings--memories)).
 
 ## Merge behaviour
 
