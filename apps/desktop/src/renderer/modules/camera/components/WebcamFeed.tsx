@@ -482,8 +482,8 @@ export function WebcamFeed(): React.JSX.Element {
     let running = true
     const settings = useSettingsStore.getState()
 
-    window.emoryApi.encounter.startSession().then((session) => {
-      sessionIdRef.current = session?.id ?? null
+    window.emoryApi.encounter.startSession().then((result) => {
+      sessionIdRef.current = result?.success ? result.session.id : null
     }).catch(() => {})
 
     const detectLoop = async (): Promise<void> => {
@@ -516,7 +516,7 @@ export function WebcamFeed(): React.JSX.Element {
       tracksRef.current = []
 
       if (sessionIdRef.current) {
-        window.emoryApi.encounter.endSession(sessionIdRef.current).catch(() => {})
+        window.emoryApi.encounter.endSession().catch(() => {})
         sessionIdRef.current = null
       }
     }
