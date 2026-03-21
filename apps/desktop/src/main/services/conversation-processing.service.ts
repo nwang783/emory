@@ -92,6 +92,7 @@ export class ConversationProcessingService {
           ? {
               id: selfPerson.id,
               name: selfPerson.name,
+              bio: selfPerson.bio,
             }
           : null,
         targetPerson: {

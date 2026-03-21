@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { FolderOpen, RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Textarea } from '@/components/ui/textarea'
 import { useSettingsStore } from '@/shared/stores/settings.store'
 
 function SettingRow({ label, value, children }: {
@@ -22,6 +24,73 @@ function SettingRow({ label, value, children }: {
       </div>
       {children}
     </div>
+  )
+}
+
+function UserProfileSettings(): React.JSX.Element {
+  const [bio, setBio] = useState('')
+  const [selfId, setSelfId] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    window.emoryApi.db.people.getSelf()
+      .then((person: { id: string; bio?: string | null } | null) => {
+        if (person) {
+          setSelfId(person.id)
+          setBio(person.bio ?? '')
+        }
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const saveBio = useCallback(async () => {
+    if (!selfId || saving) return
+    setSaving(true)
+    try {
+      await window.emoryApi.db.people.update(selfId, { bio })
+      toast.success('Profile saved')
+    } finally {
+      setSaving(false)
+    }
+  }, [selfId, saving, bio])
+
+  if (!loaded) return <></>
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-sm">Your Profile</CardTitle>
+        <CardDescription className="text-xs">
+          Tell Emory about yourself. This helps the AI better understand your conversations — who
+          you're talking about, what you do, and what matters to you.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {selfId ? (
+          <>
+            <Textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="e.g. I'm a software engineer living in Atlanta. I have a wife named Sarah and two kids, Emma (8) and Jake (5). I enjoy hiking and woodworking on weekends."
+              className="min-h-[120px] resize-y"
+            />
+            <Button
+              className="w-fit"
+              disabled={!selfId || saving}
+              onClick={() => void saveBio()}
+            >
+              Save
+            </Button>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Set yourself as a person in the People tab first to configure your profile.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -368,6 +437,7 @@ export function SettingsPanel(): React.JSX.Element {
       <section className="mx-auto flex max-w-xl flex-col gap-4 p-6">
         <h2 className="text-lg font-semibold tracking-tight">Settings</h2>
 
+        <UserProfileSettings />
         <RecognitionSettings />
         <DisplaySettings />
         <PerformanceSettings />

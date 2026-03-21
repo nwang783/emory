@@ -27,6 +27,7 @@ function rowToPerson(row: PersonRow): Person {
     name: row.name,
     relationship: row.relationship,
     notes: row.notes,
+    bio: row.bio ?? null,
     photos: row.photos,
     firstMet: row.first_met,
     lastSeen: row.last_seen,
@@ -163,6 +164,11 @@ export class PeopleRepository {
     if (input.notes !== undefined) {
       fields.push('notes = ?')
       values.push(input.notes)
+    }
+
+    if (input.bio !== undefined) {
+      fields.push('bio = ?')
+      values.push(input.bio)
     }
 
     if (fields.length === 0) return existing

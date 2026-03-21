@@ -10,7 +10,7 @@ type OpenRouterChatCompletionResponse = {
 
 type ExtractMemoriesInput = {
   transcript: string
-  selfPerson: { id: string; name: string } | null
+  selfPerson: { id: string; name: string; bio?: string | null } | null
   targetPerson: { id: string; name: string; relationship?: string | null }
   recordedAt: string
 }
@@ -183,9 +183,10 @@ export class MemoryExtractionService {
               'Set appliesToPerson to target_person, self_person, or unknown.',
               'Keep memoryText short, factual, and useful for future conversations.',
               'When the memory is about the wearer, phrase memoryText from the wearer perspective when natural, for example: "You had lunch with Ryan at 2 PM."',
+              input.selfPerson?.bio ? `Background about the wearer: ${input.selfPerson.bio}` : '',
               'Resolve relative times like today, tomorrow, and this afternoon into ISO timestamps when the transcript makes the time clear. Otherwise use recordedAt.',
               'If there are no good memories, return an empty memories array.',
-            ].join(' '),
+            ].filter(Boolean).join(' '),
           },
           {
             role: 'user',
