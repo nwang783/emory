@@ -3,7 +3,7 @@ import { create } from 'zustand'
 export type RemoteIngestUpdatedPayload = {
   config: {
     enabled: boolean
-    bindMode: 'all' | 'loopback' | 'tailscale'
+    bindMode: 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
     signalingPort: number
     beaconEnabled: boolean
     beaconIntervalMs: number

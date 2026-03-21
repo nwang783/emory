@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type BindMode = 'all' | 'loopback' | 'tailscale'
+type BindMode = 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
 
 type ConfigForm = {
   enabled: boolean
@@ -43,7 +43,7 @@ type StatusPayload = {
 
 const REMOTE_INGEST_FORM_DEFAULT: ConfigForm = {
   enabled: false,
-  bindMode: 'tailscale',
+  bindMode: 'tailscale_lan',
   signalingPort: 18763,
   beaconEnabled: true,
   beaconIntervalMs: 2000,
@@ -263,8 +263,10 @@ export function RemoteIngestSettings(): React.JSX.Element {
             Bind to
           </Label>
           <p className="text-xs text-muted-foreground">
-            <strong>Tailscale only</strong> uses your 100.x address (recommended). <strong>All interfaces</strong>{' '}
-            listens on every NIC — use with strict Tailscale ACLs.
+            <strong>Tailscale + local LAN</strong> listens on all interfaces but lists <strong>100.x first</strong>, then
+            Wi‑Fi/Ethernet IPs — same phone can use tailnet or home LAN. <strong>Tailscale only</strong> binds the
+            100.x NIC (strictest). <strong>All interfaces</strong> is the same listen address as Tailscale + LAN; use
+            either depending on whether you want tailnet-first address ordering in Copy / beacon.
           </p>
           <Select
             value={form.bindMode}
@@ -274,8 +276,9 @@ export function RemoteIngestSettings(): React.JSX.Element {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="tailscale_lan">Tailscale + local LAN (recommended)</SelectItem>
               <SelectItem value="tailscale">Tailscale (100.x) only</SelectItem>
-              <SelectItem value="all">All interfaces (0.0.0.0)</SelectItem>
+              <SelectItem value="all">All interfaces — flat address list</SelectItem>
               <SelectItem value="loopback">Loopback (127.0.0.1) — local dev</SelectItem>
             </SelectContent>
           </Select>

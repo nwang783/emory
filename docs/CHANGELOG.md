@@ -1,5 +1,10 @@
 # Documentation changelog
 
+## 2026-03-21 — Remote ingest: Tailscale + local LAN bind mode
+
+- **Desktop** — [`remote-ingest.types.ts`](../apps/desktop/src/main/services/remote-ingest.types.ts): bind mode **`tailscale_lan`** (default): listen **`0.0.0.0`**, list **100.x then other LAN** IPv4s via [`buildEffectiveAddresses`](../apps/desktop/src/main/services/remote-ingest-network.ts). [`GET /health`](../apps/desktop/src/main/services/remote-ingest-server.service.ts) + UDP beacon include **`advertisedAddresses`**. Settings + IPC + preload + store updated.
+- **Docs** — [remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [remote-discovery.md](./architecture/remote-discovery.md), [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md).
+
 ## 2026-03-21 — WebRTC: open questions (documented doubts)
 
 - **[remote-ingest-webrtc-encoding.md](./architecture/remote-ingest-webrtc-encoding.md)** — “Open questions / documented doubts”: iOS stack choice (WebRTC.framework vs Meta/custom), HEVC vs H.264, TURN need, untuned bitrate/FPS defaults.

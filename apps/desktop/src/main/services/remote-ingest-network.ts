@@ -22,13 +22,37 @@ export function listTailscaleIpv4(): string[] {
 }
 
 /**
+ * IPv4 addresses to show in Settings / copy-paste / beacon (order matters for UX).
+ * - `tailscale_lan`: Tailscale 100.x first, then other non-loopback LAN NICs (same machine).
+ * - `all`: all non-internal IPv4 (OS order).
+ */
+export function buildEffectiveAddresses(bindMode: RemoteIngestBindMode): string[] {
+  const tailscale = listTailscaleIpv4()
+  const allLan = listLanIpv4()
+
+  if (bindMode === 'loopback') {
+    return ['127.0.0.1']
+  }
+  if (bindMode === 'tailscale') {
+    return tailscale.length > 0 ? tailscale : []
+  }
+  if (bindMode === 'tailscale_lan') {
+    const tsSet = new Set(tailscale)
+    const rest = allLan.filter((a) => !tsSet.has(a))
+    const merged = [...tailscale, ...rest]
+    return merged.length > 0 ? merged : ['127.0.0.1']
+  }
+  return allLan.length > 0 ? allLan : ['127.0.0.1']
+}
+
+/**
  * Host to pass to `server.listen()` for the HTTP ingest server.
  */
 export function resolveListenHost(bindMode: RemoteIngestBindMode): {
   host: string | null
   error: string | null
 } {
-  if (bindMode === 'all') {
+  if (bindMode === 'all' || bindMode === 'tailscale_lan') {
     return { host: '0.0.0.0', error: null }
   }
   if (bindMode === 'loopback') {
@@ -39,7 +63,7 @@ export function resolveListenHost(bindMode: RemoteIngestBindMode): {
     return {
       host: null,
       error:
-        'No Tailscale IPv4 (100.x) found. Install Tailscale and connect, or use Bind: All interfaces / Loopback.',
+        'No Tailscale IPv4 (100.x) found. Install Tailscale and connect, or use Bind: Tailscale + LAN / All interfaces / Loopback.',
     }
   }
   return { host: ts[0]!, error: null }

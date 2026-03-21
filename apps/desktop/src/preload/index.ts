@@ -148,7 +148,7 @@ const emoryApi = {
     getConfig: (): Promise<{
       config: {
         enabled: boolean
-        bindMode: 'all' | 'loopback' | 'tailscale'
+        bindMode: 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
         signalingPort: number
         beaconEnabled: boolean
         beaconIntervalMs: number
@@ -172,7 +172,7 @@ const emoryApi = {
 
     apply: (payload: {
       enabled?: boolean
-      bindMode?: 'all' | 'loopback' | 'tailscale'
+      bindMode?: 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
       signalingPort?: number
       beaconEnabled?: boolean
       beaconIntervalMs?: number
@@ -185,7 +185,7 @@ const emoryApi = {
       handler: (payload: {
         config: {
           enabled: boolean
-          bindMode: 'all' | 'loopback' | 'tailscale'
+          bindMode: 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
           signalingPort: number
           beaconEnabled: boolean
           beaconIntervalMs: number

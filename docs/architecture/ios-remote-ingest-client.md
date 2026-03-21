@@ -53,7 +53,8 @@ Host: {host}
   "friendlyName": "Emory home",
   "signalingPort": 18763,
   "wsIngestPath": "/ingest",
-  "wsSignalingPath": "/signaling"
+  "wsSignalingPath": "/signaling",
+  "advertisedAddresses": ["100.x.y.z", "192.168.1.42"]
 }
 ```
 
@@ -64,6 +65,7 @@ Host: {host}
 | `protoVersion` | number | **3** = health + JPEG `/ingest` + WebRTC signaling path advertised. **2** = WS ingest only. **1** = health only. If newer, decide whether to proceed or show “update app” |
 | `wsIngestPath` | string (optional) | WebSocket path on **same TCP port** as HTTP (e.g. `/ingest`) |
 | `wsSignalingPath` | string (optional) | WebSocket path for **JSON** WebRTC signaling (e.g. `/signaling`); same TCP port |
+| `advertisedAddresses` | string[] (optional) | IPv4s to try for HTTP/WS (tailnet-first when desktop uses **Tailscale + LAN**); fall back to manual host if absent |
 | `instanceId` | string | Stable server identity; dedupe discovery list |
 | `friendlyName` | string | Display label |
 | `signalingPort` | number | Should match requested port; use for later WSS on same port unless spec changes |
@@ -100,7 +102,8 @@ When the desktop has **UDP discovery beacon** enabled, it periodically sends **U
   "httpHealthPath": "/health",
   "wsIngestPath": "/ingest",
   "wsSignalingPath": "/signaling",
-  "bindHostAdvertised": "100.x.y.z"
+  "bindHostAdvertised": "100.x.y.z",
+  "advertisedAddresses": ["100.x.y.z", "192.168.1.42"]
 }
 ```
 

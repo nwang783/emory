@@ -90,7 +90,7 @@ This section kept the earlier design rationale. It ties together existing pieces
 
 **Recommendation:** **B** for v1 — extend **`remote-ingest:get-status`** (already has `effectiveHost`, `signalingPort`) so the renderer builds `ws://{effectiveHost}:{signalingPort}/ingest` (exact path TBD). The **HTTP server** in [`RemoteIngestServerService`](../../apps/desktop/src/main/services/remote-ingest-server.service.ts) upgrades connections on `/ingest` with **`ws`** (same pattern as `bridge-server`’s `createServer` + `WebSocketServer`).
 
-**Bind-mode note:** In **Tailscale-only** bind, the machine’s **100.x** is reachable from the renderer on the same box; use **`effectiveHost` from status** (not hardcoded `127.0.0.1`). Loopback bind mode may require **`127.0.0.1`** for both health and WS.
+**Bind-mode note:** In **Tailscale-only** bind, the machine’s **100.x** is reachable from the renderer on the same box; use **`effectiveHost` from status** (not hardcoded `127.0.0.1`). **Tailscale + local LAN** listens on **`0.0.0.0`** — renderer can still use **`effectiveHost`** (first of **`effectiveAddresses`**, usually 100.x when Tailscale is up) or a LAN IP from that list if you test same-Wi‑Fi. Loopback bind mode requires **`127.0.0.1`** for both health and WS.
 
 ---
 

@@ -13,7 +13,7 @@ function broadcastRemoteIngestUpdated(persisted: RemoteIngestPersisted, status: 
 }
 
 function isBindMode(v: unknown): v is RemoteIngestConfig['bindMode'] {
-  return v === 'all' || v === 'loopback' || v === 'tailscale'
+  return v === 'all' || v === 'loopback' || v === 'tailscale' || v === 'tailscale_lan'
 }
 
 export function registerRemoteIngestIpc(

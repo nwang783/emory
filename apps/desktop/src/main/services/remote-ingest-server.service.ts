@@ -12,8 +12,8 @@ import {
   type RemoteIngestStatus,
 } from './remote-ingest.types.js'
 import {
+  buildEffectiveAddresses,
   buildTailscaleMagicDnsHint,
-  listLanIpv4,
   listTailscaleIpv4,
   resolveListenHost,
 } from './remote-ingest-network.js'
@@ -156,17 +156,9 @@ export class RemoteIngestServerService {
   getStatus(persisted: RemoteIngestPersisted): RemoteIngestStatus {
     const listening = this.httpServer !== null && this.httpServer.listening
     const tailscale = listTailscaleIpv4()
-    const allLan = listLanIpv4()
     const { error: bindError } = resolveListenHost(persisted.bindMode)
 
-    let effectiveAddresses: string[] = []
-    if (persisted.bindMode === 'all') {
-      effectiveAddresses = allLan.length > 0 ? allLan : ['127.0.0.1']
-    } else if (persisted.bindMode === 'loopback') {
-      effectiveAddresses = ['127.0.0.1']
-    } else {
-      effectiveAddresses = tailscale.length > 0 ? tailscale : []
-    }
+    const effectiveAddresses = buildEffectiveAddresses(persisted.bindMode)
 
     const effectiveHost = effectiveAddresses[0] ?? null
 
@@ -298,6 +290,7 @@ export class RemoteIngestServerService {
           signalingPort: persisted.signalingPort,
           wsIngestPath: REMOTE_INGEST_WS_PATH,
           wsSignalingPath: REMOTE_INGEST_SIGNALING_PATH,
+          advertisedAddresses: buildEffectiveAddresses(persisted.bindMode),
         })
         res.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8',
@@ -421,8 +414,10 @@ export class RemoteIngestServerService {
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
     this.beaconSocket = socket
 
-    const payload = (): string =>
-      JSON.stringify({
+    const payload = (): string => {
+      const addrs = buildEffectiveAddresses(persisted.bindMode)
+      const primary = boundHost === '0.0.0.0' ? (addrs[0] ?? '127.0.0.1') : boundHost
+      return JSON.stringify({
         service: 'emory-ingest',
         protoVersion: REMOTE_INGEST_PROTO_VERSION,
         instanceId: persisted.instanceId,
@@ -431,9 +426,10 @@ export class RemoteIngestServerService {
         httpHealthPath: '/health',
         wsIngestPath: REMOTE_INGEST_WS_PATH,
         wsSignalingPath: REMOTE_INGEST_SIGNALING_PATH,
-        bindHostAdvertised:
-          boundHost === '0.0.0.0' ? listTailscaleIpv4()[0] ?? listLanIpv4()[0] ?? '127.0.0.1' : boundHost,
+        bindHostAdvertised: primary,
+        advertisedAddresses: addrs,
       })
+    }
 
     socket.on('error', (err) => {
       console.warn('[RemoteIngest] Beacon socket error:', err.message)

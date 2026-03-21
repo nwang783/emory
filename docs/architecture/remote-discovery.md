@@ -23,11 +23,13 @@ Payload: **UTF-8 JSON**, sent periodically (default **2000 ms** when enabled in 
   "httpHealthPath": "/health",
   "wsIngestPath": "/ingest",
   "wsSignalingPath": "/signaling",
-  "bindHostAdvertised": "100.x.y.z"
+  "bindHostAdvertised": "100.x.y.z",
+  "advertisedAddresses": ["100.x.y.z", "192.168.1.42"]
 }
 ```
 
-- **`bindHostAdvertised`** — best-effort address the phone should use for HTTP/WSS (Tailscale IP when bound to `0.0.0.0`, else the bind address).
+- **`bindHostAdvertised`** — primary hint (first entry of **`advertisedAddresses`** when bound to `0.0.0.0`, else the bind address).
+- **`advertisedAddresses`** — ordered IPv4 list: **Tailscale + LAN** mode puts **100.x** first, then other LAN IPs; lets the phone try tailnet or same Wi‑Fi without manual re-entry.
 - **`protoVersion`** — bump when fields change; clients should ignore unknown versions or degrade gracefully.
 
 ## Toggle

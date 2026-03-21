@@ -23,7 +23,10 @@ function normalizeConfig(raw: unknown): RemoteIngestPersisted {
   }
   const o = raw as Record<string, unknown>
   const bindMode =
-    o.bindMode === 'all' || o.bindMode === 'loopback' || o.bindMode === 'tailscale'
+    o.bindMode === 'all' ||
+    o.bindMode === 'loopback' ||
+    o.bindMode === 'tailscale' ||
+    o.bindMode === 'tailscale_lan'
       ? o.bindMode
       : REMOTE_INGEST_DEFAULT_CONFIG.bindMode
   let instanceId = typeof o.instanceId === 'string' && o.instanceId.length > 0 ? o.instanceId : base.instanceId

@@ -8,7 +8,7 @@ export const REMOTE_INGEST_WS_PATH = '/ingest'
 export const REMOTE_INGEST_SIGNALING_PATH = '/signaling'
 
 /** Bind address policy for the remote ingest HTTP listener. */
-export type RemoteIngestBindMode = 'all' | 'loopback' | 'tailscale'
+export type RemoteIngestBindMode = 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
 
 /** User-editable remote ingest configuration (persisted under userData). */
 export type RemoteIngestConfig = {
@@ -33,9 +33,9 @@ export type RemoteIngestConfig = {
 /** Runtime status returned to the renderer. */
 export type RemoteIngestStatus = {
   listening: boolean
-  /** Primary address string for display (e.g. first tailnet or loopback). */
+  /** Primary address string for display (`effectiveAddresses[0]`). */
   effectiveHost: string | null
-  /** IPv4 candidates the phone may use (100.x, LAN, loopback). */
+  /** IPv4 candidates the phone may use; order depends on bind mode (tailnet-first for `tailscale_lan`). */
   effectiveAddresses: string[]
   signalingPort: number
   beaconActive: boolean
@@ -48,7 +48,8 @@ export type RemoteIngestStatus = {
 
 export const REMOTE_INGEST_DEFAULT_CONFIG: RemoteIngestConfig = {
   enabled: false,
-  bindMode: 'tailscale',
+  /** Listen on all interfaces; UI lists 100.x first then other LAN IPs (see `buildEffectiveAddresses`). */
+  bindMode: 'tailscale_lan',
   signalingPort: 18763,
   beaconEnabled: true,
   beaconIntervalMs: 2000,

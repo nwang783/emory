@@ -35,7 +35,7 @@ apps/desktop/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
     │       ├── remote-ingest-settings.service.ts  # Persist remote-ingest-config.json
     │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest + WS /signaling (WebRTC JSON) + UDP beacon
-    │       ├── remote-ingest-network.ts          # Tailscale 100.x / bind helper
+    │       ├── remote-ingest-network.ts          # resolveListenHost, buildEffectiveAddresses (tailnet + LAN ordering)
     │       ├── remote-ingest.types.ts            # Config + status types
     │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
     │       ├── conversation-processing.service.ts # Audio -> transcript -> extracted memories
@@ -146,7 +146,7 @@ apps/desktop/
 
 The **Remote ingest** card (`RemoteIngestSettings.tsx`) exposes:
 
-- **Enable** remote ingest HTTP listener; **bind** to Tailscale `100.x`, all interfaces, or loopback; **TCP port** (default 18763); **friendly name** for discovery; **UDP beacon** toggle and interval; placeholder for future **mDNS**.
+- **Enable** remote ingest HTTP listener; **bind** modes: **Tailscale + local LAN** (default, `0.0.0.0` + tailnet-first address list), Tailscale-only `100.x`, all interfaces (flat list), or loopback; **TCP port** (default 18763); **friendly name**; **UDP beacon**; **`/health` + beacon** expose **`advertisedAddresses`** for LAN vs tailnet.
 - **Prefer WebRTC video** (default on): Camera uses **`/signaling`** + WebRTC for lower latency; off = JPEG-only **`/ingest`** viewer path.
 - **Apply & restart server** persists `<userData>/remote-ingest-config.json` and restarts the HTTP + WebSocket + beacon services.
 - **Copy connection details** puts health URLs, **`/ingest`**, **`/signaling`**, and instance id on the clipboard for manual phone setup.
