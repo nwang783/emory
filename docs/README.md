@@ -7,6 +7,9 @@
 | [packages/db.md](./packages/db.md) | SQLite adapter, repositories, schema through v6 (indexes, conversations), retention |
 | [architecture/cloud-sync.md](./architecture/cloud-sync.md) | Cloud sync protocol design and migration path |
 | [architecture/conversation-recording.md](./architecture/conversation-recording.md) | Face-linked mic capture, debounce rules, IPC + storage layout |
+| [architecture/remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md) | Remote ingest hub: Tailscale, HTTP `/health`, settings persistence, IPC |
+| [architecture/remote-discovery.md](./architecture/remote-discovery.md) | UDP multicast beacon for phone discovery (manual config remains first-class) |
+| [architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md) | **iOS implementer guide:** Tailscale, `/health`, UDP beacon, manual config, planned WSS/WebRTC |
 
 Start with **desktop** for end-to-end behaviour, then **core** / **db** for types and persistence.
 

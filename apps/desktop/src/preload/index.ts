@@ -144,6 +144,33 @@ const emoryApi = {
       ipcRenderer.invoke('app:open-tts-folder'),
   },
 
+  remoteIngest: {
+    getConfig: (): Promise<{
+      config: {
+        enabled: boolean
+        bindMode: 'all' | 'loopback' | 'tailscale'
+        signalingPort: number
+        beaconEnabled: boolean
+        beaconIntervalMs: number
+        mdnsEnabled: boolean
+        friendlyName: string
+      }
+      instanceId: string
+    }> => ipcRenderer.invoke('remote-ingest:get-config'),
+
+    getStatus: () => ipcRenderer.invoke('remote-ingest:get-status'),
+
+    apply: (payload: {
+      enabled?: boolean
+      bindMode?: 'all' | 'loopback' | 'tailscale'
+      signalingPort?: number
+      beaconEnabled?: boolean
+      beaconIntervalMs?: number
+      mdnsEnabled?: boolean
+      friendlyName?: string
+    }) => ipcRenderer.invoke('remote-ingest:apply', payload),
+  },
+
   tts: {
     synthesize: (input: { text: string }) =>
       ipcRenderer.invoke('tts:synthesize', input).then((result) => {

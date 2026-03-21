@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSettingsStore } from '@/shared/stores/settings.store'
+import { RemoteIngestSettings } from './RemoteIngestSettings'
 
 function SettingRow({ label, value, children }: {
   label: string
@@ -372,6 +373,7 @@ export function SettingsPanel(): React.JSX.Element {
         <DisplaySettings />
         <PerformanceSettings />
         <ConversationStorageSettings />
+        <RemoteIngestSettings />
         <RetentionSettings />
 
         <Button variant="outline" className="mt-2 self-start gap-2" onClick={resetToDefaults}>
