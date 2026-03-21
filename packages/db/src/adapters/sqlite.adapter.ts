@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import type { Database as DatabaseType } from 'better-sqlite3'
 import type { StorageAdapter } from './storage.adapter.js'
 
-const CURRENT_SCHEMA_VERSION = 5
+const CURRENT_SCHEMA_VERSION = 6
 
 export class SqliteAdapter implements StorageAdapter {
   private db: DatabaseType
@@ -59,6 +59,9 @@ export class SqliteAdapter implements StorageAdapter {
       }
       if (fromVersion < 5) {
         this.migrateToV5()
+      }
+      if (fromVersion < 6) {
+        this.migrateToV6()
       }
     })
 
@@ -253,5 +256,63 @@ export class SqliteAdapter implements StorageAdapter {
     }
 
     this.db.exec('INSERT OR REPLACE INTO schema_version (version) VALUES (5)')
+  }
+
+  private migrateToV6(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_recordings (
+        id TEXT PRIMARY KEY,
+        person_id TEXT NOT NULL,
+        encounter_id TEXT NULL,
+        recorded_at TEXT NOT NULL,
+        audio_path TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        duration_ms INTEGER NULL,
+        transcript_raw_text TEXT NULL,
+        transcript_provider TEXT NULL,
+        transcript_status TEXT NOT NULL,
+        transcript_error TEXT NULL,
+        extraction_status TEXT NOT NULL,
+        extraction_json TEXT NULL,
+        extraction_error TEXT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+        FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE SET NULL
+      )
+    `)
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS person_memories (
+        id TEXT PRIMARY KEY,
+        person_id TEXT NOT NULL,
+        recording_id TEXT NULL,
+        memory_text TEXT NOT NULL,
+        memory_type TEXT NOT NULL,
+        memory_date TEXT NOT NULL,
+        confidence REAL NULL,
+        source_quote TEXT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE,
+        FOREIGN KEY (recording_id) REFERENCES conversation_recordings(id) ON DELETE SET NULL
+      )
+    `)
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_conversation_recordings_person_id
+        ON conversation_recordings(person_id);
+      CREATE INDEX IF NOT EXISTS idx_conversation_recordings_recorded_at
+        ON conversation_recordings(recorded_at);
+      CREATE INDEX IF NOT EXISTS idx_conversation_recordings_person_recorded_at
+        ON conversation_recordings(person_id, recorded_at);
+      CREATE INDEX IF NOT EXISTS idx_person_memories_person_id
+        ON person_memories(person_id);
+      CREATE INDEX IF NOT EXISTS idx_person_memories_memory_date
+        ON person_memories(memory_date);
+      CREATE INDEX IF NOT EXISTS idx_person_memories_person_memory_date
+        ON person_memories(person_id, memory_date);
+    `)
+
+    this.db.exec('INSERT OR REPLACE INTO schema_version (version) VALUES (6)')
   }
 }

@@ -2,6 +2,7 @@ node_modules/
 dist/
 out/
 .turbo/
+tmp/
 *.tsbuildinfo
 
 # Environment

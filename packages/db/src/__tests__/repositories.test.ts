@@ -5,6 +5,7 @@ import { EncounterRepository } from '../repositories/encounter.repository.js'
 import { UnknownSightingRepository } from '../repositories/unknown-sighting.repository.js'
 import { RelationshipRepository } from '../repositories/relationship.repository.js'
 import { RetentionRepository } from '../repositories/retention.repository.js'
+import { ConversationRepository } from '../repositories/conversation.repository.js'
 
 function createTestAdapter(): SqliteAdapter {
   const adapter = new SqliteAdapter(':memory:')
@@ -273,5 +274,228 @@ describe('RetentionRepository', () => {
     const config = repo.getByEntityType('encounters')
     expect(config!.retentionDays).toBe(180)
     expect(config!.keepImportant).toBe(true)
+  })
+})
+
+describe('ConversationRepository', () => {
+  let adapter: SqliteAdapter
+  let peopleRepo: PeopleRepository
+  let conversationRepo: ConversationRepository
+
+  beforeEach(() => {
+    adapter = createTestAdapter()
+    peopleRepo = new PeopleRepository(adapter)
+    conversationRepo = new ConversationRepository(adapter)
+  })
+
+  it('creates conversation tables and indexes', () => {
+    const db = adapter.getDb()
+    const tables = db.prepare(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table' AND name IN ('conversation_recordings', 'person_memories')
+      ORDER BY name
+    `).all() as Array<{ name: string }>
+
+    const indexes = db.prepare(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'index' AND name IN (
+        'idx_conversation_recordings_person_id',
+        'idx_conversation_recordings_recorded_at',
+        'idx_conversation_recordings_person_recorded_at',
+        'idx_person_memories_person_id',
+        'idx_person_memories_memory_date',
+        'idx_person_memories_person_memory_date'
+      )
+      ORDER BY name
+    `).all() as Array<{ name: string }>
+
+    expect(tables.map((row) => row.name)).toEqual(['conversation_recordings', 'person_memories'])
+    expect(indexes.map((row) => row.name)).toEqual([
+      'idx_conversation_recordings_person_id',
+      'idx_conversation_recordings_person_recorded_at',
+      'idx_conversation_recordings_recorded_at',
+      'idx_person_memories_memory_date',
+      'idx_person_memories_person_id',
+      'idx_person_memories_person_memory_date',
+    ])
+  })
+
+  it('creates a recording row with pending statuses', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+      durationMs: 42_000,
+    })
+
+    expect(recording.personId).toBe(person.id)
+    expect(recording.transcriptStatus).toBe('pending')
+    expect(recording.extractionStatus).toBe('pending')
+  })
+
+  it('saves transcript successfully', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+    })
+
+    const updated = conversationRepo.setTranscript(recording.id, 'Hello there', 'deepgram')
+    expect(updated!.transcriptRawText).toBe('Hello there')
+    expect(updated!.transcriptProvider).toBe('deepgram')
+    expect(updated!.transcriptStatus).toBe('complete')
+  })
+
+  it('marks transcript failure without deleting the row', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+    })
+
+    const updated = conversationRepo.markTranscriptFailed(recording.id, 'deepgram unavailable')
+    expect(updated!.transcriptStatus).toBe('failed')
+    expect(updated!.transcriptError).toContain('deepgram')
+    expect(conversationRepo.findRecordingById(recording.id)).not.toBeNull()
+  })
+
+  it('saves extraction JSON successfully', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+    })
+
+    conversationRepo.setTranscript(recording.id, 'He started physical therapy.', 'deepgram')
+    const updated = conversationRepo.setExtractionResult(recording.id, {
+      summary: 'John discussed therapy.',
+      memories: [{
+        memoryText: 'John started physical therapy.',
+        memoryType: 'health',
+        memoryDate: '2026-03-21T15:10:00.000Z',
+        confidence: 0.91,
+        sourceQuote: 'I started physical therapy.',
+        appliesToPerson: 'target_person',
+      }],
+      uncertainItems: [],
+    })
+
+    expect(updated!.extractionStatus).toBe('complete')
+    expect(updated!.extractionJson?.summary).toBe('John discussed therapy.')
+    expect(updated!.transcriptRawText).toBe('He started physical therapy.')
+  })
+
+  it('marks extraction failure while preserving transcript', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+    })
+
+    conversationRepo.setTranscript(recording.id, 'He started physical therapy.', 'deepgram')
+    const updated = conversationRepo.markExtractionFailed(recording.id, 'schema validation failed')
+
+    expect(updated!.extractionStatus).toBe('failed')
+    expect(updated!.extractionError).toContain('schema')
+    expect(updated!.transcriptRawText).toBe('He started physical therapy.')
+  })
+
+  it('inserts and queries memories by person newest first with limit', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const other = peopleRepo.create({ name: 'Jane' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+    })
+
+    const inserted = conversationRepo.addMemories([
+      {
+        personId: person.id,
+        recordingId: recording.id,
+        memoryText: 'John mentioned Emily is visiting next week.',
+        memoryType: 'relationship',
+        memoryDate: '2026-03-21T15:10:00.000Z',
+        confidence: 0.92,
+      },
+      {
+        personId: person.id,
+        recordingId: recording.id,
+        memoryText: 'John started physical therapy this month.',
+        memoryType: 'health',
+        memoryDate: '2026-03-22T15:10:00.000Z',
+        confidence: 0.95,
+      },
+      {
+        personId: other.id,
+        memoryText: 'Jane likes tea.',
+        memoryType: 'preference',
+        memoryDate: '2026-03-23T15:10:00.000Z',
+        confidence: 0.8,
+      },
+    ])
+
+    expect(inserted.length).toBe(3)
+
+    const memories = conversationRepo.getMemoriesByPerson(person.id, 1)
+    expect(memories).toHaveLength(1)
+    expect(memories[0].memoryText).toContain('physical therapy')
+    expect(memories[0].recordingId).toBe(recording.id)
+  })
+
+  it('gets recordings by person newest first', () => {
+    const person = peopleRepo.create({ name: 'John' })
+
+    conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-20T15:10:00.000Z',
+      audioPath: '/tmp/older.webm',
+      mimeType: 'audio/webm',
+    })
+    conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/newer.webm',
+      mimeType: 'audio/webm',
+    })
+
+    const recordings = conversationRepo.getRecordingsByPerson(person.id, 2)
+    expect(recordings).toHaveLength(2)
+    expect(recordings[0].audioPath).toBe('/tmp/newer.webm')
+  })
+
+  it('deleting a person cascades recordings and memories', () => {
+    const person = peopleRepo.create({ name: 'John' })
+    const recording = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T15:10:00.000Z',
+      audioPath: '/tmp/test.webm',
+      mimeType: 'audio/webm',
+    })
+
+    conversationRepo.addMemories([{
+      personId: person.id,
+      recordingId: recording.id,
+      memoryText: 'John likes baseball.',
+      memoryType: 'preference',
+      memoryDate: '2026-03-21T15:10:00.000Z',
+    }])
+
+    expect(peopleRepo.delete(person.id)).toBe(true)
+    expect(conversationRepo.findRecordingById(recording.id)).toBeNull()
+    expect(conversationRepo.getMemoriesByPerson(person.id)).toHaveLength(0)
   })
 })
