@@ -7,7 +7,9 @@ export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['@emory/core', '@emory/db'],
+        // Bundle dotenv: when it stays external, Node resolves from `out/main/` and often
+        // misses hoisted workspace `node_modules` (ERR_MODULE_NOT_FOUND).
+        exclude: ['@emory/core', '@emory/db', 'dotenv'],
       }),
     ],
     build: {
