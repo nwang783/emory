@@ -18,13 +18,18 @@ final class MicrophoneCaptureService {
     private(set) var isCapturing = false
 
     // Ring buffer of recent audio for future backend use (~10 seconds)
+    // Accessed only on bufferQueue to avoid main thread contention
     private var recentBuffers: [AVAudioPCMBuffer] = []
     private let maxBufferCount = 300 // ~10s at 1024 samples / 48kHz
+    private let bufferQueue = DispatchQueue(label: "com.emory.audioBuffers")
 
     // Recording state
     private(set) var isRecording = false
     private var recordingBuffers: [AVAudioPCMBuffer] = []
     private var recordingFormat: AVAudioFormat?
+
+    // External audio callback (for bridge server forwarding)
+    var onAudioBuffer: ((AVAudioPCMBuffer, Double, Int) -> Void)?
 
     // Playback state
     private var audioPlayer: AVAudioPlayerNode?
@@ -60,11 +65,15 @@ final class MicrophoneCaptureService {
         print("[Mic] Starting capture: \(format.sampleRate)Hz, \(format.channelCount)ch")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self = self else { return }
             let level = Self.computeRMS(buffer)
-            self?.levelContinuation?.yield(level)
+            self.levelContinuation?.yield(level)
 
-            // Store buffer for future backend use + recording
-            DispatchQueue.main.async {
+            // Forward to bridge server if callback is set
+            self.onAudioBuffer?(buffer, format.sampleRate, Int(format.channelCount))
+
+            // Store buffer on a background queue to avoid main thread contention
+            self.bufferQueue.async { [weak self] in
                 guard let self = self else { return }
                 self.recentBuffers.append(buffer)
                 if self.recentBuffers.count > self.maxBufferCount {
@@ -93,7 +102,7 @@ final class MicrophoneCaptureService {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
         isCapturing = false
-        recentBuffers.removeAll()
+        bufferQueue.sync { recentBuffers.removeAll() }
         levelContinuation?.yield(0.0)
         print("[Mic] Capture stopped")
     }
@@ -101,7 +110,7 @@ final class MicrophoneCaptureService {
     // MARK: - Get Recent Buffers (for future backend use)
 
     func getRecentBuffers() -> [AVAudioPCMBuffer] {
-        return recentBuffers
+        return bufferQueue.sync { recentBuffers }
     }
 
     // MARK: - Recording

@@ -13,11 +13,6 @@ struct PeopleView: View {
     @State private var newPersonName = ""
     @State private var newPersonRelationship = ""
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
-    ]
-
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
@@ -34,12 +29,13 @@ struct PeopleView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
 
-                    // People grid
-                    LazyVGrid(columns: columns, spacing: 20) {
+                    // People list — single column for easy recognition
+                    VStack(spacing: 14) {
                         ForEach(people) { person in
                             NavigationLink(destination: PersonDetailView(person: person)) {
                                 PersonCardView(person: person, fontSize: settings.fontSize)
                             }
+                            .buttonStyle(.plain)
                             .contextMenu {
                                 Button(role: .destructive) {
                                     personToRemove = person
@@ -114,19 +110,28 @@ struct PersonCardView: View {
     let fontSize: EmoryTheme.FontSize
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Photo placeholder
-            ZStack {
-                Circle()
-                    .fill(EmoryTheme.primary.opacity(0.1))
-                    .frame(width: 90, height: 90)
-                Image(systemName: person.photoName ?? "person.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(EmoryTheme.primary.opacity(0.6))
+        VStack(spacing: 10) {
+            // Photo
+            if let photoAsset = person.photoName,
+               UIImage(named: photoAsset) != nil {
+                Image(photoAsset)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 110, height: 110)
+                    .clipShape(Circle())
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(EmoryTheme.primary.opacity(0.08))
+                        .frame(width: 110, height: 110)
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 54))
+                        .foregroundStyle(EmoryTheme.primary.opacity(0.5))
+                }
             }
 
             Text(person.name)
-                .font(.system(size: fontSize.bodySize, weight: .semibold))
+                .font(.system(size: fontSize.bodySize, weight: .bold))
                 .foregroundStyle(EmoryTheme.textPrimary)
 
             Text(person.relationship)
@@ -134,7 +139,7 @@ struct PersonCardView: View {
                 .foregroundStyle(EmoryTheme.primary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 24)
         .emoryCard()
     }
 }

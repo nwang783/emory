@@ -7,6 +7,13 @@ import SwiftUI
 struct HomeView: View {
     @State private var settings = AppSettings.shared
 
+    // Entry animation states
+    @State private var showHeader = false
+    @State private var showWelcome = false
+    @State private var showAccentLine = false
+    @State private var showPeopleCard = false
+    @State private var showSettingsCard = false
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -33,6 +40,8 @@ struct HomeView: View {
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
+            .opacity(showHeader ? 1 : 0)
+            .offset(y: showHeader ? 0 : -20)
 
             Spacer()
 
@@ -51,16 +60,18 @@ struct HomeView: View {
                 // Accent line
                 RoundedRectangle(cornerRadius: 2)
                     .fill(EmoryTheme.primary)
-                    .frame(width: 60, height: 4)
+                    .frame(width: showAccentLine ? 60 : 0, height: 4)
                     .padding(.top, 4)
             }
             .multilineTextAlignment(.center)
             .padding(.horizontal, 24)
+            .opacity(showWelcome ? 1 : 0)
+            .scaleEffect(showWelcome ? 1 : 0.9)
 
             Spacer()
 
             // Card buttons
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 NavigationLink(destination: PeopleView()) {
                     HomeCardButton(
                         icon: "person.2.fill",
@@ -69,6 +80,9 @@ struct HomeView: View {
                         fontSize: settings.fontSize
                     )
                 }
+                .buttonStyle(BounceButtonStyle())
+                .opacity(showPeopleCard ? 1 : 0)
+                .offset(y: showPeopleCard ? 0 : 40)
 
                 NavigationLink(destination: SettingsView()) {
                     HomeCardButton(
@@ -78,6 +92,9 @@ struct HomeView: View {
                         fontSize: settings.fontSize
                     )
                 }
+                .buttonStyle(BounceButtonStyle())
+                .opacity(showSettingsCard ? 1 : 0)
+                .offset(y: showSettingsCard ? 0 : 40)
             }
             .padding(.horizontal, 24)
 
@@ -85,10 +102,41 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(EmoryTheme.background.ignoresSafeArea())
+        .onAppear {
+            // Staggered entry animation
+            withAnimation(.easeOut(duration: 0.5)) {
+                showHeader = true
+            }
+            withAnimation(.easeOut(duration: 0.6).delay(0.2)) {
+                showWelcome = true
+            }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.5)) {
+                showAccentLine = true
+            }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.6)) {
+                showPeopleCard = true
+            }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.75)) {
+                showSettingsCard = true
+            }
+        }
     }
 }
 
 // MARK: - Home Card Button
+
+// MARK: - Bounce Button Style
+
+struct BounceButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.93 : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Home Card Button (People)
 
 struct HomeCardButton: View {
     let icon: String
@@ -113,6 +161,9 @@ struct HomeCardButton: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .emoryCard()
+        .background(EmoryTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: EmoryTheme.cardShadow, radius: 8, x: 0, y: 2)
     }
 }
+

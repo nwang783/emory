@@ -16,44 +16,54 @@ struct PersonDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Large photo header
-                ZStack {
-                    Rectangle()
-                        .fill(EmoryTheme.primary.opacity(0.1))
-                        .frame(height: 260)
-
-                    Image(systemName: person.photoName ?? "person.circle.fill")
-                        .font(.system(size: 100))
-                        .foregroundStyle(EmoryTheme.primary.opacity(0.5))
+                // Large photo header — edge to edge
+                if let photoAsset = person.photoName,
+                   UIImage(named: photoAsset) != nil {
+                    Image(photoAsset)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 320)
+                        .clipped()
+                } else {
+                    ZStack {
+                        Rectangle()
+                            .fill(EmoryTheme.primary.opacity(0.08))
+                            .frame(height: 320)
+                        Image(systemName: "person.circle.fill")
+                            .font(.system(size: 100))
+                            .foregroundStyle(EmoryTheme.primary.opacity(0.4))
+                    }
                 }
 
                 // Name and relationship
-                VStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(person.name)
                         .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
                         .foregroundStyle(EmoryTheme.textPrimary)
                     Text(person.relationship)
                         .font(.system(size: settings.fontSize.bodySize))
-                        .foregroundStyle(EmoryTheme.primary)
+                        .foregroundStyle(EmoryTheme.textSecondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
                 .padding(.top, 20)
                 .padding(.bottom, 24)
 
                 // Memory Notes
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Memory Notes")
                         .font(.system(size: settings.fontSize.titleSize, weight: .semibold))
                         .foregroundStyle(EmoryTheme.textPrimary)
                         .padding(.horizontal, 24)
 
                     ForEach(person.memoryNotes) { note in
-                        HStack(alignment: .top, spacing: 14) {
+                        HStack(alignment: .center, spacing: 14) {
                             ZStack {
                                 Circle()
                                     .fill(noteColor(for: note.icon).opacity(0.15))
-                                    .frame(width: 40, height: 40)
+                                    .frame(width: 44, height: 44)
                                 Image(systemName: note.icon)
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 18))
                                     .foregroundStyle(noteColor(for: note.icon))
                             }
 
@@ -70,10 +80,13 @@ struct PersonDetailView: View {
 
                             Spacer()
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .emoryCard()
                         .padding(.horizontal, 24)
                     }
                 }
-                .padding(.bottom, 24)
+                .padding(.bottom, 28)
 
                 // Action buttons
                 VStack(spacing: 12) {
@@ -81,61 +94,63 @@ struct PersonDetailView: View {
                     Button {
                         showAddNote = true
                     } label: {
-                        HStack {
+                        HStack(spacing: 8) {
                             Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 18))
                             Text("Add Note")
                                 .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .padding(.vertical, 14)
                         .background(EmoryTheme.secondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(Capsule())
                     }
 
                     // Enroll Face
                     Button {
                         showEnrollConfirmation = true
                     } label: {
-                        HStack {
+                        HStack(spacing: 8) {
                             Image(systemName: "faceid")
+                                .font(.system(size: 18))
                             Text("Enroll Face")
                                 .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
                         }
-                        .foregroundStyle(EmoryTheme.primary)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(EmoryTheme.primary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(EmoryTheme.primary.opacity(0.3), lineWidth: 1)
-                        )
+                        .padding(.vertical, 14)
+                        .background(EmoryTheme.primary)
+                        .clipShape(Capsule())
                     }
 
                     // Remove Person
                     Button {
                         showRemoveConfirmation = true
                     } label: {
-                        HStack {
+                        HStack(spacing: 8) {
                             Image(systemName: "person.badge.minus")
+                                .font(.system(size: 18))
                             Text("Remove Person")
                                 .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
                         }
-                        .foregroundStyle(EmoryTheme.destructive)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(EmoryTheme.destructive.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(.vertical, 14)
+                        .background(EmoryTheme.destructive.opacity(0.75))
+                        .clipShape(Capsule())
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 40)
                 .padding(.bottom, 40)
             }
         }
         .background(EmoryTheme.background.ignoresSafeArea())
         .navigationTitle("About \(person.name)")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            InactivityManager.shared.setLastViewedPerson(person)
+        }
         .confirmationDialog(
             "Are you sure you want to remove \(person.name)?",
             isPresented: $showRemoveConfirmation,
