@@ -27,10 +27,16 @@ apps/desktop/
     │   │   ├── encounter.ipc.ts      # Encounter/session IPC handlers
     │   │   ├── face.ipc.ts           # Face processing IPC handlers
     │   │   ├── unknown.ipc.ts        # Unknown person tracking IPC handlers
-    │   │   └── conversation.ipc.ts   # Conversation audio save + recording queries
+    │   │   └── conversation.ipc.ts   # Save/process recordings, list rows, query memories (audio)
     │   └── services/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
-    │       └── conversation-storage.service.ts # Write audio files under userData/conversations
+    │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
+    │       ├── conversation-processing.service.ts # Audio -> transcript -> extracted memories
+    │       ├── deepgram.service.ts   # STT for recordings and memory queries
+    │       ├── memory-extraction.service.ts # Transcript -> structured memories
+    │       ├── memory-query.service.ts # Query audio -> retrieval -> grounded answer
+    │       ├── memory-query-understanding.service.ts # LLM query planning
+    │       └── memory-answer.service.ts # LLM answer synthesis from retrieved evidence
     ├── preload/
     │   ├── index.ts                  # Context bridge API
     │   └── types.d.ts                # Window type augmentation
@@ -100,8 +106,8 @@ apps/desktop/
 | Layer | Responsibility |
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
-| **Services** (`src/main/services/`) | Background services running in the main process. `CleanupService` runs a daily data retention job that deletes old encounters and unknown sightings based on user-configured retention policies stored in `retention_config`. `ConversationStorageService` writes conversation audio files under **`userData/conversations/YYYY/MM/`**. |
-| **IPC Handlers** (`src/main/ipc/`) | Bridge between renderer requests and backend services. `db.ipc.ts` wraps `PeopleRepository` (people + embeddings CRUD, **`db:people:get-self`** / **`db:people:set-self`** for the connection-web “me” person), `RelationshipRepository` (**duplicate pair rejected** on create), `RetentionRepository`, and **`ConversationRepository`**; `encounter.ipc.ts` wraps `EncounterRepository` (session + encounter lifecycle); `face.ipc.ts` wraps `FaceService` plus auto-learn persistence rules (cooldown, diversity, caps, server-side embedding verification); `unknown.ipc.ts` wraps `UnknownSightingRepository` for tracking unrecognized faces; **`conversation.ipc.ts`** saves audio blobs and inserts **`conversation_recordings`** rows (STT/parse deferred). |
+| **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments. `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
+| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
 
@@ -223,6 +229,38 @@ The camera view includes a **"Who is that?"** button that announces identified p
 | `isSpeaking()` | Returns `true` while an utterance is active |
 | `stopSpeaking()` | Cancels current speech immediately |
 
+## Memory query pipeline
+
+The desktop main process now supports a hackathon-grade spoken memory query flow:
+
+1. Save or receive a short query audio clip.
+2. Transcribe it with `DeepgramService`.
+3. Convert the spoken question into a retrieval plan with `MemoryQueryUnderstandingService`.
+4. Search SQLite using fuzzy person-name matching plus time-window and text filters in `ConversationRepository` / `PeopleRepository`.
+5. Synthesize a short grounded answer with `MemoryAnswerService`.
+
+This supports questions like:
+
+- "Who is Ryan?"
+- "What did I do at 2 PM today?"
+
+Current limitation:
+
+- self-timeline answers depend on self memories already being stored in `person_memories`
+- conversation recordings are still keyed to the conversation partner, so self timeline queries rely on memory rows more than recording rows
+
+## Future iPhone audio integration
+
+The future mobile path should keep the desktop app as the memory authority:
+
+1. iPhone app captures a short audio query from the glasses.
+2. iPhone app sends that audio clip, plus timestamp metadata, to the desktop app over the local bridge.
+3. Desktop runs the same `MemoryQueryService` pipeline described above.
+4. Desktop returns a short answer text or synthesized audio.
+5. iPhone app plays the response back to the glasses.
+
+For the hackathon, the manual scripts stand in for that iPhone leg by accepting local audio files.
+
 ## Match margin
 
 Each `FaceMatch` from `face:process-frame` includes **`matchMargin`** (see `@emory/core`):
@@ -329,6 +367,7 @@ Session state is managed in-process: `encounter:start-session` stores the active
 | `conversation:process-recording` | Renderer → Main | `ProcessRecordingInput` (optional `recordingId` if row exists) | `{ success: true, recording, memories }` or `{ success: false, error }` |
 | `conversation:get-recordings-by-person` | Renderer → Main | `personId, limit?` | `ConversationRecording[]` |
 | `conversation:get-memories-by-person` | Renderer → Main | `personId, limit?` | `PersonMemory[]` |
+| `conversation:query-memories` | Renderer → Main | `{ audioPath, mimeType, askedAt? }` | `QueryMemoriesResult` wrapped in `{ success: true, … }` or `{ success: false, error }` |
 
 `save-and-process` writes the file, inserts the DB row, then runs **Deepgram transcription** and **memory extraction** (`ConversationProcessingService`). On failure after the row is created, the row is deleted and the file is removed. `encounter_id` is resolved from the active session when possible (see `getActiveSessionId` in `encounter.ipc.ts`).
 
@@ -338,6 +377,7 @@ Session state is managed in-process: `encounter:start-session` stores the active
 | `emoryApi.conversation.processRecording(input)` | `conversation:process-recording` |
 | `emoryApi.conversation.getRecordingsByPerson(personId, limit?)` | `conversation:get-recordings-by-person` |
 | `emoryApi.conversation.getMemoriesByPerson(personId, limit?)` | `conversation:get-memories-by-person` |
+| `emoryApi.conversation.queryMemories(input)` | `conversation:query-memories` |
 
 ### App Operations
 

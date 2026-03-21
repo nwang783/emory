@@ -57,8 +57,9 @@ See [`docs/packages/db.md`](../packages/db.md) — tables **`conversation_record
 | `conversation:process-recording` | Same pipeline for an existing file path (e.g. CLI / manual scripts); optional `recordingId` if the row already exists |
 | `conversation:get-recordings-by-person` | List recordings for a person |
 | `conversation:get-memories-by-person` | List distilled memories |
+| `conversation:query-memories` | Spoken question clip (`audioPath` + `mimeType`) → STT + **`MemoryQueryService`** (retrieval + answer) |
 
-Preload: `window.emoryApi.conversation.*`.
+Preload: `window.emoryApi.conversation.*` (includes **`queryMemories`**).
 
 ## Settings
 

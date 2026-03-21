@@ -40,6 +40,15 @@ describe('PeopleRepository', () => {
     expect(all.length).toBe(2)
   })
 
+  it('searches people by fuzzy name with exact match first', () => {
+    repo.create({ name: 'Ryan' })
+    repo.create({ name: 'Ryanne' })
+    repo.create({ name: 'Bryan' })
+
+    const matches = repo.searchByName('ryan')
+    expect(matches.map((person) => person.name)).toEqual(['Ryan', 'Ryanne', 'Bryan'])
+  })
+
   it('updates a person', () => {
     const person = repo.create({ name: 'Old Name' })
     const updated = repo.update(person.id, { name: 'New Name' })
@@ -546,5 +555,70 @@ describe('ConversationRepository', () => {
     expect(peopleRepo.delete(person.id)).toBe(true)
     expect(conversationRepo.findRecordingById(recording.id)).toBeNull()
     expect(conversationRepo.getMemoriesByPerson(person.id)).toHaveLength(0)
+  })
+
+  it('searches memories by person, time range, and text', () => {
+    const self = peopleRepo.create({ name: 'Grandma Test' })
+    const ryan = peopleRepo.create({ name: 'Ryan' })
+
+    conversationRepo.addMemories([
+      {
+        personId: self.id,
+        memoryText: 'You had lunch with Ryan at 2 PM.',
+        memoryType: 'event',
+        memoryDate: '2026-03-21T14:00:00.000Z',
+      },
+      {
+        personId: self.id,
+        memoryText: 'You watered the garden at 4 PM.',
+        memoryType: 'routine',
+        memoryDate: '2026-03-21T16:00:00.000Z',
+      },
+      {
+        personId: ryan.id,
+        memoryText: 'Ryan goes to UVA.',
+        memoryType: 'fact',
+        memoryDate: '2026-03-20T14:00:00.000Z',
+      },
+    ])
+
+    const matches = conversationRepo.searchMemories({
+      personIds: [self.id],
+      startAt: '2026-03-21T13:30:00.000Z',
+      endAt: '2026-03-21T14:30:00.000Z',
+      searchText: 'lunch',
+    })
+
+    expect(matches).toHaveLength(1)
+    expect(matches[0].memoryText).toContain('lunch with Ryan')
+  })
+
+  it('searches recordings by transcript text and time range', () => {
+    const person = peopleRepo.create({ name: 'Ryan' })
+    const older = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T13:00:00.000Z',
+      audioPath: '/tmp/older.webm',
+      mimeType: 'audio/webm',
+    })
+    const newer = conversationRepo.createRecording({
+      personId: person.id,
+      recordedAt: '2026-03-21T14:00:00.000Z',
+      audioPath: '/tmp/newer.webm',
+      mimeType: 'audio/webm',
+    })
+
+    conversationRepo.setTranscript(older.id, 'We talked about lunch plans.', 'deepgram')
+    conversationRepo.setTranscript(newer.id, 'Ryan said UVA is going great.', 'deepgram')
+
+    const matches = conversationRepo.searchRecordings({
+      personIds: [person.id],
+      startAt: '2026-03-21T13:30:00.000Z',
+      endAt: '2026-03-21T14:30:00.000Z',
+      transcriptSearchText: 'uva',
+    })
+
+    expect(matches).toHaveLength(1)
+    expect(matches[0].id).toBe(newer.id)
   })
 })

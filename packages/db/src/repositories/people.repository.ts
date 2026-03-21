@@ -91,6 +91,30 @@ export class PeopleRepository {
     return rows.map(rowToPerson)
   }
 
+  searchByName(query: string, limit: number = 5): Person[] {
+    const db = this.adapter.getDb()
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) return []
+
+    const likeValue = `%${normalized}%`
+    const rows = db.prepare(`
+      SELECT *
+      FROM people
+      WHERE lower(name) LIKE ?
+      ORDER BY
+        CASE
+          WHEN lower(name) = ? THEN 0
+          WHEN lower(name) LIKE ? THEN 1
+          ELSE 2
+        END,
+        length(name) ASC,
+        created_at DESC
+      LIMIT ?
+    `).all(likeValue, normalized, `${normalized}%`, limit) as PersonRow[]
+
+    return rows.map(rowToPerson)
+  }
+
   findSelf(): Person | null {
     const db = this.adapter.getDb()
     const row = db.prepare('SELECT * FROM people WHERE is_self = 1 LIMIT 1').get() as PersonRow | undefined

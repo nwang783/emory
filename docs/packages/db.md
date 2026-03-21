@@ -42,7 +42,7 @@ packages/db/src/
 | `UnknownSightingRepository` | `unknown-sighting.repository.ts` | Unknown face upserts, status transitions, `deleteOldSightings` |
 | `RelationshipRepository` | `relationship.repository.ts` | Links between people; **`findAll()`** for full graph loads |
 | `RetentionRepository` | `retention.repository.ts` | Read/upsert `retention_config` |
-| `ConversationRepository` | `conversation.repository.ts` | Conversation audio metadata, transcript/parse status transitions, person memories |
+| `ConversationRepository` | `conversation.repository.ts` | Recording CRUD + transcript/extraction updates, **`searchMemories`** / **`searchRecordings`** (filters + text search for memory query retrieval), person memories |
 
 ## Schema
 

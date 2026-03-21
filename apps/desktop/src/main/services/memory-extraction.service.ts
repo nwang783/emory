@@ -178,10 +178,12 @@ export class MemoryExtractionService {
             content: [
               'You extract structured memories from transcripts for a local-first assistant.',
               'The user is the app wearer. The target person is the person they are talking to.',
-              'Extract only useful memories about the target person.',
+              'Extract useful memories about the target person and, when clearly supported, the wearer.',
               'Do not invent speaker turns or facts when the transcript is ambiguous.',
               'Set appliesToPerson to target_person, self_person, or unknown.',
               'Keep memoryText short, factual, and useful for future conversations.',
+              'When the memory is about the wearer, phrase memoryText from the wearer perspective when natural, for example: "You had lunch with Ryan at 2 PM."',
+              'Resolve relative times like today, tomorrow, and this afternoon into ISO timestamps when the transcript makes the time clear. Otherwise use recordedAt.',
               'If there are no good memories, return an empty memories array.',
             ].join(' '),
           },

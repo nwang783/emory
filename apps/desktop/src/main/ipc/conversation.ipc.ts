@@ -9,8 +9,11 @@ import type {
   PersonMemory,
 } from '@emory/db'
 import { ConversationStorageService } from '../services/conversation-storage.service.js'
-import type { ConversationProcessingService } from '../services/conversation-processing.service.js'
-import type { ProcessRecordingInput } from '../services/conversation-processing.service.js'
+import type {
+  ConversationProcessingService,
+  ProcessRecordingInput,
+} from '../services/conversation-processing.service.js'
+import type { MemoryQueryService, QueryMemoriesInput } from '../services/memory-query.service.js'
 import { getActiveSessionId } from './encounter.ipc.js'
 
 type SaveAndProcessPayload = {
@@ -47,6 +50,7 @@ export function registerConversationIpc(
   conversationRepo: ConversationRepository,
   encounterRepo: EncounterRepository,
   peopleRepo: PeopleRepository,
+  memoryQueryService: MemoryQueryService,
 ): void {
   const storage = new ConversationStorageService()
 
@@ -171,6 +175,16 @@ export function registerConversationIpc(
       return conversationRepo.getMemoriesByPerson(personId, limit ?? 20)
     } catch {
       return []
+    }
+  })
+
+  ipcMain.handle('conversation:query-memories', async (_event, input: QueryMemoriesInput) => {
+    try {
+      const result = await memoryQueryService.queryFromAudio(input)
+      return { success: true, ...result }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
     }
   })
 }

@@ -164,6 +164,12 @@ const emoryApi = {
       ipcRenderer.invoke('conversation:get-recordings-by-person', personId, limit),
     getMemoriesByPerson: (personId: string, limit?: number) =>
       ipcRenderer.invoke('conversation:get-memories-by-person', personId, limit),
+    queryMemories: (input: {
+      audioPath: string
+      mimeType: string
+      askedAt?: string
+    }) =>
+      ipcRenderer.invoke('conversation:query-memories', input),
   },
 } as const
 
