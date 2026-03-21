@@ -131,6 +131,22 @@ const emoryApi = {
       ipcRenderer.invoke('encounter:count-by-person', personId, sinceDays),
   },
 
+  conversation: {
+    processRecording: (input: {
+      personId: string
+      encounterId?: string | null
+      audioPath: string
+      mimeType: string
+      durationMs?: number | null
+      recordedAt: string
+    }) =>
+      ipcRenderer.invoke('conversation:process-recording', input),
+    getRecordingsByPerson: (personId: string, limit?: number) =>
+      ipcRenderer.invoke('conversation:get-recordings-by-person', personId, limit),
+    getMemoriesByPerson: (personId: string, limit?: number) =>
+      ipcRenderer.invoke('conversation:get-memories-by-person', personId, limit),
+  },
+
   app: {
     getModelsDir: (): Promise<string> => ipcRenderer.invoke('app:get-models-dir'),
     getUserDataDir: (): Promise<string> => ipcRenderer.invoke('app:get-user-data-dir'),

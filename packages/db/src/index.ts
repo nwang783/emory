@@ -5,6 +5,7 @@ export { EncounterRepository } from './repositories/encounter.repository.js'
 export { UnknownSightingRepository } from './repositories/unknown-sighting.repository.js'
 export { RelationshipRepository } from './repositories/relationship.repository.js'
 export { RetentionRepository } from './repositories/retention.repository.js'
+export { ConversationRepository } from './repositories/conversation.repository.js'
 export type {
   Person,
   CreatePersonInput,
@@ -28,4 +29,16 @@ export type {
   FrameQuality,
   IdentityGrade,
   GradedIdentity,
+  TranscriptStatus,
+  ExtractionStatus,
+  MemoryType,
+  AppliesToPerson,
+  ConversationRecording,
+  ConversationRecordingRow,
+  CreateConversationRecordingInput,
+  ExtractedMemory,
+  MemoryExtractionResult,
+  PersonMemory,
+  PersonMemoryRow,
+  CreatePersonMemoryInput,
 } from './types.js'

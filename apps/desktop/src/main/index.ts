@@ -5,7 +5,12 @@ import { registerFaceIpc, disposeFaceService } from './ipc/face.ipc.js'
 import { registerDbIpc } from './ipc/db.ipc.js'
 import { registerEncounterIpc } from './ipc/encounter.ipc.js'
 import { registerUnknownIpc } from './ipc/unknown.ipc.js'
+import { registerConversationIpc } from './ipc/conversation.ipc.js'
 import { CleanupService } from './services/cleanup.service.js'
+import { DeepgramService } from './services/deepgram.service.js'
+import { MemoryExtractionService } from './services/memory-extraction.service.js'
+import { ConversationProcessingService } from './services/conversation-processing.service.js'
+import { loadEnvironment } from './services/env.service.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -44,6 +49,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  loadEnvironment()
   electronApp.setAppUserModelId('com.emory.desktop')
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -63,15 +69,24 @@ app.whenReady().then(() => {
   ipcMain.handle('app:get-models-dir', () => getModelsDir())
   ipcMain.handle('app:get-user-data-dir', () => app.getPath('userData'))
 
-  const { peopleRepo, encounterRepo, unknownRepo, retentionRepo } = registerDbIpc()
+  const { peopleRepo, encounterRepo, unknownRepo, retentionRepo, conversationRepo } = registerDbIpc()
 
   const cleanupService = new CleanupService(retentionRepo, encounterRepo, unknownRepo)
   cleanupService.start()
+  const deepgramService = new DeepgramService()
+  const memoryExtractionService = new MemoryExtractionService()
+  const conversationProcessingService = new ConversationProcessingService(
+    conversationRepo,
+    peopleRepo,
+    deepgramService,
+    memoryExtractionService,
+  )
 
   const mainWindow = createWindow()
   registerFaceIpc(mainWindow, getModelsDir(), peopleRepo)
   registerEncounterIpc(mainWindow, encounterRepo)
   registerUnknownIpc(mainWindow, unknownRepo)
+  registerConversationIpc(mainWindow, conversationProcessingService, conversationRepo)
 
   app.on('before-quit', () => {
     cleanupService.stop()
