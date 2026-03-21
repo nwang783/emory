@@ -18,6 +18,9 @@ import { MemoryQueryUnderstandingService } from './services/memory-query-underst
 import { MemoryAnswerService } from './services/memory-answer.service.js'
 import { MemoryQueryService } from './services/memory-query.service.js'
 import { loadEnvironment } from './services/env.service.js'
+import { RemoteIngestSettingsService } from './services/remote-ingest-settings.service.js'
+import { RemoteIngestServerService } from './services/remote-ingest-server.service.js'
+import { registerRemoteIngestIpc } from './ipc/remote-ingest.ipc.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -155,6 +158,14 @@ app.whenReady().then(async () => {
     memoryAnswerService,
   )
 
+  const remoteIngestSettings = new RemoteIngestSettingsService(app.getPath('userData'))
+  const remoteIngestServer = new RemoteIngestServerService()
+  registerRemoteIngestIpc(remoteIngestSettings, remoteIngestServer)
+  const remoteIngestPersisted = await remoteIngestSettings.load()
+  if (remoteIngestPersisted.enabled) {
+    await remoteIngestServer.apply(remoteIngestPersisted)
+  }
+
   const mainWindow = createWindow()
   registerFaceIpc(mainWindow, getModelsDir(), peopleRepo)
   registerEncounterIpc(mainWindow, encounterRepo)
@@ -171,6 +182,7 @@ app.whenReady().then(async () => {
 
   app.on('before-quit', () => {
     cleanupService.stop()
+    void remoteIngestServer.stop()
     disposeFaceService().catch(() => {})
   })
 

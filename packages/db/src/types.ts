@@ -8,6 +8,7 @@ export type Person = {
   name: string
   relationship: string | null
   notes: string | null
+  bio: string | null
   photos: string | null
   firstMet: string | null
   lastSeen: string | null
@@ -29,6 +30,7 @@ export type UpdatePersonInput = {
   name?: string
   relationship?: string
   notes?: string
+  bio?: string
 }
 
 export type EmbeddingSource = 'photo_upload' | 'live_capture' | 'auto_learn'
@@ -52,6 +54,7 @@ export type PersonRow = {
   name: string
   relationship: string | null
   notes: string | null
+  bio: string | null
   photos: string | null
   first_met: string | null
   last_seen: string | null
@@ -366,4 +369,10 @@ export type CreatePersonMemoryInput = {
   memoryDate: string
   confidence?: number | null
   sourceQuote?: string | null
+}
+
+export type UpdatePersonMemoryInput = {
+  memoryText?: string
+  memoryType?: MemoryType
+  memoryDate?: string
 }

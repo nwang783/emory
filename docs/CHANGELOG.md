@@ -1,5 +1,14 @@
 # Documentation changelog
 
+## 2026-03-21 — iOS remote ingest implementer guide
+
+- **[architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md)** — For agents/devs building the Swift app: Tailscale prerequisites, `GET /health` JSON contract (field table), UDP beacon integration notes, manual config UX, Info.plist / Local Network, suggested `emory/` file layout, QA matrix, placeholders for future WSS/WebRTC.
+
+## 2026-03-21 — Remote ingest (Phase 0) + docs
+
+- **Desktop** — Settings card **Remote ingest**: enable server, bind mode (Tailscale / all / loopback), signaling port, friendly name, UDP beacon interval, **Apply & restart**, **Copy connection details**. Main: `remote-ingest-settings.service.ts`, `remote-ingest-server.service.ts`, `remote-ingest-network.ts`, `remote-ingest.ipc.ts`; HTTP `GET /health` + optional multicast beacon per [remote-discovery.md](./architecture/remote-discovery.md).
+- **Docs** — [architecture/remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [architecture/remote-discovery.md](./architecture/remote-discovery.md); [apps/desktop.md](./apps/desktop.md) IPC + Settings updates.
+
 ## 2026-03-21 — Camera device label in camera view
 
 - **`useWebcam` + `WebcamFeed`** — After `getUserMedia`, the first video track’s `label` is shown as **Camera: …** above conversation/mic status. Helps verify which device Chromium actually bound (vs Windows “default” camera).

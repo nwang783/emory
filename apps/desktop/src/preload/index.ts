@@ -41,7 +41,7 @@ const emoryApi = {
 
       findById: (id: string) => ipcRenderer.invoke('db:people:find-by-id', id),
 
-      update: (id: string, input: { name?: string; relationship?: string; notes?: string }) =>
+      update: (id: string, input: { name?: string; relationship?: string; notes?: string; bio?: string }) =>
         ipcRenderer.invoke('db:people:update', id, input),
 
       delete: (id: string) => ipcRenderer.invoke('db:people:delete', id),
@@ -144,6 +144,33 @@ const emoryApi = {
       ipcRenderer.invoke('app:open-tts-folder'),
   },
 
+  remoteIngest: {
+    getConfig: (): Promise<{
+      config: {
+        enabled: boolean
+        bindMode: 'all' | 'loopback' | 'tailscale'
+        signalingPort: number
+        beaconEnabled: boolean
+        beaconIntervalMs: number
+        mdnsEnabled: boolean
+        friendlyName: string
+      }
+      instanceId: string
+    }> => ipcRenderer.invoke('remote-ingest:get-config'),
+
+    getStatus: () => ipcRenderer.invoke('remote-ingest:get-status'),
+
+    apply: (payload: {
+      enabled?: boolean
+      bindMode?: 'all' | 'loopback' | 'tailscale'
+      signalingPort?: number
+      beaconEnabled?: boolean
+      beaconIntervalMs?: number
+      mdnsEnabled?: boolean
+      friendlyName?: string
+    }) => ipcRenderer.invoke('remote-ingest:apply', payload),
+  },
+
   tts: {
     synthesize: (input: { text: string }) =>
       ipcRenderer.invoke('tts:synthesize', input).then((result) => {
@@ -197,6 +224,20 @@ const emoryApi = {
       askedAt?: string
     }) =>
       ipcRenderer.invoke('conversation:query-memories-from-text', input),
+    getAllMemories: (limit?: number) =>
+      ipcRenderer.invoke('conversation:get-all-memories', limit),
+    searchMemories: (input: {
+      personIds?: string[]
+      startAt?: string | null
+      endAt?: string | null
+      searchText?: string | null
+      limit?: number
+    }) =>
+      ipcRenderer.invoke('conversation:search-memories', input),
+    updateMemory: (id: string, input: { memoryText?: string; memoryType?: string; memoryDate?: string }) =>
+      ipcRenderer.invoke('conversation:update-memory', id, input),
+    deleteMemory: (id: string) =>
+      ipcRenderer.invoke('conversation:delete-memory', id),
   },
 } as const
 

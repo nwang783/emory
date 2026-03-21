@@ -27,9 +27,14 @@ apps/desktop/
     │   │   ├── encounter.ipc.ts      # Encounter/session IPC handlers
     │   │   ├── face.ipc.ts           # Face processing IPC handlers
     │   │   ├── unknown.ipc.ts        # Unknown person tracking IPC handlers
-    │   │   └── conversation.ipc.ts   # Save/process recordings, list rows, query memories (audio)
+    │   │   ├── conversation.ipc.ts   # Save/process recordings, list rows, query memories (audio)
+    │   │   └── remote-ingest.ipc.ts  # Remote hub: get/apply config, status (Tailscale ingest Phase 0)
     │   └── services/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
+    │       ├── remote-ingest-settings.service.ts  # Persist remote-ingest-config.json
+    │       ├── remote-ingest-server.service.ts   # HTTP /health + UDP discovery beacon
+    │       ├── remote-ingest-network.ts          # Tailscale 100.x / bind helper
+    │       ├── remote-ingest.types.ts            # Config + status types
     │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
     │       ├── conversation-processing.service.ts # Audio -> transcript -> extracted memories
     │       ├── deepgram.service.ts   # STT for recordings and memory queries
@@ -66,7 +71,8 @@ apps/desktop/
         │   │       └── RegisterFaceModal.tsx  # New person registration: inline viewfinder + upload
         │   ├── settings/
         │   │   └── components/
-        │   │       └── SettingsPanel.tsx      # Recognition, display, performance, conversation storage path, retention
+        │   │       ├── SettingsPanel.tsx      # Recognition, display, performance, conversation storage, remote ingest, retention
+    │   │       └── RemoteIngestSettings.tsx # Remote ingest hub (bind, port, beacon, copy connection kit)
         │   ├── activity/
         │   │   └── components/
         │   │       └── ActivityFeed.tsx       # Timestamped event log
@@ -107,7 +113,7 @@ apps/desktop/
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
 | **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments. `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
-| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
+| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; **`remote-ingest.ipc.ts`** — `remote-ingest:get-config`, `get-status`, `apply`; `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
 
@@ -131,6 +137,14 @@ apps/desktop/
 | `unknown_sightings` | `UnknownSightingRepository.deleteOldSightings(days)` | Only deletes sightings with status other than `tracking` |
 
 ### Settings UI
+
+The **Remote ingest** card (`RemoteIngestSettings.tsx`) exposes:
+
+- **Enable** remote ingest HTTP listener; **bind** to Tailscale `100.x`, all interfaces, or loopback; **TCP port** (default 18763); **friendly name** for discovery; **UDP beacon** toggle and interval; placeholder for future **mDNS**.
+- **Apply & restart server** persists `<userData>/remote-ingest-config.json` and restarts the HTTP + beacon services.
+- **Copy connection details** puts health URLs and instance id on the clipboard for manual phone setup.
+
+See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md) and [Remote discovery](../architecture/remote-discovery.md).
 
 The **Data Retention** card in `SettingsPanel` exposes:
 
@@ -379,6 +393,14 @@ Session state is managed in-process: `encounter:start-session` stores the active
 | `emoryApi.conversation.getMemoriesByPerson(personId, limit?)` | `conversation:get-memories-by-person` |
 | `emoryApi.conversation.queryMemories(input)` | `conversation:query-memories` |
 
+### Remote ingest (Phase 0)
+
+| Channel | Direction | Returns |
+|---|---|---|
+| `remote-ingest:get-config` | Renderer → Main | `{ config, instanceId }` (persisted remote ingest settings) |
+| `remote-ingest:get-status` | Renderer → Main | `RemoteIngestStatus` (listening, addresses, beacon, errors) |
+| `remote-ingest:apply` | Renderer → Main | Partial config patch → `{ success, config?, status?, error? }` — saves file and restarts listener |
+
 ### App Operations
 
 | Channel | Direction | Returns |
@@ -390,7 +412,7 @@ Session state is managed in-process: `encounter:start-session` stores the active
 
 ### Preload surface (`window.emoryApi`)
 
-The preload script exposes `window.emoryApi` — `face`, `db` (people, relationships, retention, embeddings), `encounter`, `unknown`, **`conversation`**, and `app` namespaces. Methods map 1:1 to channels in the tables above (including **`relationships.getAll`** → `db:relationships:get-all` and **`embeddings.*`** → `db:embeddings:*`).
+The preload script exposes `window.emoryApi` — `face`, `db` (people, relationships, retention, embeddings), `encounter`, `unknown`, **`conversation`**, **`remoteIngest`**, and `app` namespaces. Methods map 1:1 to channels in the tables above (including **`relationships.getAll`** → `db:relationships:get-all` and **`embeddings.*`** → `db:embeddings:*`).
 
 | Method | Maps to |
 |---|---|
@@ -442,6 +464,9 @@ The preload script exposes `window.emoryApi` — `face`, `db` (people, relations
 | `emoryApi.app.getUserDataDir()` | `app:get-user-data-dir` |
 | `emoryApi.app.getConversationsDir()` | `app:get-conversations-dir` |
 | `emoryApi.app.openConversationsFolder()` | `app:open-conversations-folder` |
+| `emoryApi.remoteIngest.getConfig()` | `remote-ingest:get-config` |
+| `emoryApi.remoteIngest.getStatus()` | `remote-ingest:get-status` |
+| `emoryApi.remoteIngest.apply(patch)` | `remote-ingest:apply` |
 
 ## IPC Data Serialization
 
@@ -491,7 +516,7 @@ Subtitle under the product name: **Memory Assistant** (`Header.tsx`).
 | `Header` | `shared/components/Header.tsx` | Brain icon, **Emory** + **Memory Assistant**, model status badge, shortcut to Settings tab |
 | `Sidebar` | `shared/components/Sidebar.tsx` | Vertical icon nav — Camera, People, Connections, Activity, Analytics, Embeddings, Settings |
 | `StatusBar` | `shared/components/StatusBar.tsx` | Model status, FPS, face count, identified count, processing time, optional “identifying…”, optional auto-learn total, error line |
-| `SettingsPanel` | `modules/settings/components/SettingsPanel.tsx` | Card sections: Recognition (thresholds, auto-learn), Display (overlays), Performance (intervals), **Conversation recordings** (path + open folder), Data Retention (cleanup policies) |
+| `SettingsPanel` | `modules/settings/components/SettingsPanel.tsx` | Card sections: Recognition (thresholds, auto-learn), Display (overlays), Performance (intervals), **Conversation recordings** (path + open folder), **Remote ingest** (Tailscale hub), Data Retention (cleanup policies) |
 | `PeopleList` | `modules/people/components/PeopleList.tsx` | People list with scroll area, loading skeletons, empty state. Accepts `fullWidth` prop for grid vs sidebar layout |
 | `PersonCard` | `modules/people/components/PersonCard.tsx` | Person card: avatar initials, relationship badge, embedding count, relative last-seen time, edit/delete actions |
 | `EditPersonModal` | `modules/people/components/EditPersonModal.tsx` | Dialog for editing person basic info + rich profile (key facts, conversation starters, important dates, last topics). **This is me** toggle calls `db.people.setSelf` / `getSelf` (clears previous self). Uses `ScrollArea` for compact layout. Saves via `db.people.update` + `db.people.updateProfile` |

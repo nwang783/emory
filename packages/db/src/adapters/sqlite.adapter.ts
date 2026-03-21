@@ -4,7 +4,7 @@ import Database from 'better-sqlite3'
 import type { Database as DatabaseType } from 'better-sqlite3'
 import type { StorageAdapter } from './storage.adapter.js'
 
-const CURRENT_SCHEMA_VERSION = 6
+const CURRENT_SCHEMA_VERSION = 7
 const require = createRequire(import.meta.url)
 const betterSqlite3Root = dirname(require.resolve('better-sqlite3/package.json'))
 const betterSqlite3NativeBinding = join(betterSqlite3Root, 'build', 'Release', 'better_sqlite3.node')
@@ -67,6 +67,9 @@ export class SqliteAdapter implements StorageAdapter {
       }
       if (fromVersion < 6) {
         this.migrateToV6()
+      }
+      if (fromVersion < 7) {
+        this.migrateToV7()
       }
     })
 
@@ -319,5 +322,15 @@ export class SqliteAdapter implements StorageAdapter {
     `)
 
     this.db.exec('INSERT OR REPLACE INTO schema_version (version) VALUES (6)')
+  }
+
+  private migrateToV7(): void {
+    try {
+      this.db.exec('ALTER TABLE people ADD COLUMN bio TEXT')
+    } catch {
+      // Column may already exist on re-run
+    }
+
+    this.db.exec('INSERT OR REPLACE INTO schema_version (version) VALUES (7)')
   }
 }

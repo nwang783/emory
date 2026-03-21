@@ -10,7 +10,7 @@ export type SettingsState = {
   showLandmarks: boolean
   showConfidence: boolean
   showBoundingBoxes: boolean
-  activeTab: 'camera' | 'people' | 'connections' | 'activity' | 'analytics' | 'embeddings' | 'settings'
+  activeTab: 'camera' | 'people' | 'connections' | 'activity' | 'analytics' | 'embeddings' | 'memories' | 'settings'
 }
 
 type SettingsActions = {
