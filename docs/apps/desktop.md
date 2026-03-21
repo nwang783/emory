@@ -236,13 +236,14 @@ The desktop main process now supports a hackathon-grade spoken memory query flow
 1. Save or receive a short query audio clip.
 2. Transcribe it with `DeepgramService`.
 3. Convert the spoken question into a retrieval plan with `MemoryQueryUnderstandingService`.
-4. Search SQLite using fuzzy person-name matching plus time-window and text filters in `ConversationRepository` / `PeopleRepository`.
-5. Synthesize a short grounded answer with `MemoryAnswerService`.
+4. Search SQLite using fuzzy person-name matching plus time-window and text filters in `ConversationRepository` / `PeopleRepository`. For each resolved person, **`MemoryQueryService`** always merges **`memory_type = relationship`** rows (graph-backed lines) via **`getRelationshipMemoriesForPersonIds`**, and loads **`RelationshipRepository.findBetween(self, person)`** so **`matchedGraphRelationships`** is passed into **`MemoryAnswerService`** as first-class evidence (not only the last N memories by date).
+5. Synthesize a short grounded answer with `MemoryAnswerService` (prompt instructs using **`matchedGraphRelationships`** for “relationship to me” style questions).
 
 This supports questions like:
 
 - "Who is Ryan?"
 - "What did I do at 2 PM today?"
+- "What is Perry’s relationship to me?" (uses Connections graph edge + relationship memories)
 
 Current limitation:
 
@@ -312,6 +313,8 @@ After extracting the embedding, registration compares it against all stored embe
 | `db:relationships:delete` | Renderer → Main | `id` | `boolean` |
 
 `db:relationships:create` and `db:relationships:update` accept a string `type` from the renderer; the main process normalises it to `RelationshipType` from `@emory/db` (`spouse`, `child`, `parent`, `sibling`, `friend`, `carer`, `neighbour`, `colleague`, `other`). Unknown values are stored as `other`.
+
+**Connections → memories:** After a successful **`create`** or **`update`**, if **`people.findSelf()`** is set and the edge touches that person, main runs **`syncGraphRelationshipToMemory`** ([`relationship-memory-sync.service.ts`](../../apps/desktop/src/main/services/relationship-memory-sync.service.ts)) and upserts a **`person_memories`** row (`memory_type: relationship`, optional FK **`relationship_id`**) on the *other* person so Memory Browser and **`conversation:query-memories`** see the relationship. **`delete`** clears linked memory rows by `relationship_id` before removing the edge. No renderer changes.
 
 ### Embedding Operations (gallery / admin)
 
@@ -507,7 +510,7 @@ Subtitle under the product name: **Memory Assistant** (`Header.tsx`).
 | `FrequentVisitors` | `modules/analytics/components/FrequentVisitors.tsx` | Ranked list of people by encounter count in the last 30 days with relationship badges |
 | `RecentEncounters` | `modules/analytics/components/RecentEncounters.tsx` | Last 20 encounters showing person name, confidence badge, timestamp, duration |
 | `UnknownSightings` | `modules/analytics/components/UnknownSightings.tsx` | Unknown sighting list with sighting count, status badge, first/last seen dates |
-| `ConnectionsGraph` | `modules/connections/components/ConnectionsGraph.tsx` | **Ego network** from **`db.people.getSelf`**: only you and people reachable via relationship edges; **you** stay pinned at the viewport centre (no global centre pull on others). Edge colours from relationship type; node hues from free-text relationship field. **Add Relationship** defaults to **You → other person** when self is set. Onboarding if people exist but self is unset |
+| `ConnectionsGraph` | `modules/connections/components/ConnectionsGraph.tsx` | **Ego network** from **`db.people.getSelf`**: only you and people reachable via relationship edges; **you** stay pinned at the viewport centre (no global centre pull on others). Edge colours from relationship type; node hues from free-text relationship field. **Add Relationship** defaults to **You → other person** when self is set. Onboarding if people exist but self is unset. Graph edges also flow into **`person_memories`** via **`db.ipc`** (see Relationship Operations above), not inside this component |
 | `EmbeddingGallery` | `modules/embeddings/components/EmbeddingGallery.tsx` | **Embeddings** tab: rows **grouped by person**, 128×128 face **thumbnails**, **source** badges (`photo_upload` / `live_capture` / `auto_learn`), per-row **delete** / **reassign**, **bulk selection** |
 
 ## State Management
@@ -597,3 +600,5 @@ The app uses `electron-vite` which provides:
 - HMR for the renderer process
 - Auto-restart for main process changes
 - Proper externalization of native Node modules
+
+**`dotenv` in the main process** is listed in `exclude` for `externalizeDepsPlugin` (see `electron.vite.config.ts`) so it is **bundled** into `out/main`. If it were left external, Node would resolve `import 'dotenv'` from `out/main/` and often fail with `ERR_MODULE_NOT_FOUND` when dependencies are hoisted to the monorepo root—`npm install dotenv` in the wrong folder does not fix that.

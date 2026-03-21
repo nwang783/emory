@@ -49,6 +49,7 @@ function rowToPersonMemory(row: PersonMemoryRow): PersonMemory {
     id: row.id,
     personId: row.person_id,
     recordingId: row.recording_id,
+    relationshipId: row.relationship_id ?? null,
     memoryText: row.memory_text,
     memoryType: row.memory_type as PersonMemory['memoryType'],
     memoryDate: row.memory_date,
@@ -193,6 +194,7 @@ export class ConversationRepository {
         id,
         person_id,
         recording_id,
+        relationship_id,
         memory_text,
         memory_type,
         memory_date,
@@ -200,7 +202,7 @@ export class ConversationRepository {
         source_quote,
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertedIds: string[] = []
@@ -213,6 +215,7 @@ export class ConversationRepository {
           id,
           item.personId,
           item.recordingId ?? null,
+          item.relationshipId ?? null,
           item.memoryText,
           item.memoryType,
           item.memoryDate,
@@ -251,6 +254,23 @@ export class ConversationRepository {
       LIMIT ?
     `)
       .all(personId, limit) as PersonMemoryRow[]
+
+    return rows.map(rowToPersonMemory)
+  }
+
+  /** All graph-synced / manual relationship lines for these people (not subject to recent-memory LIMIT cut-off). */
+  getRelationshipMemoriesForPersonIds(personIds: string[]): PersonMemory[] {
+    if (personIds.length === 0) return []
+    const db = this.adapter.getDb()
+    const placeholders = personIds.map(() => '?').join(', ')
+    const rows = db
+      .prepare(`
+      SELECT *
+      FROM person_memories
+      WHERE person_id IN (${placeholders}) AND memory_type = 'relationship'
+      ORDER BY memory_date DESC, created_at DESC
+    `)
+      .all(...personIds) as PersonMemoryRow[]
 
     return rows.map(rowToPersonMemory)
   }
@@ -300,6 +320,64 @@ export class ConversationRepository {
     `).all(...values, limit) as PersonMemoryRow[]
 
     return rows.map(rowToPersonMemory)
+  }
+
+  /**
+   * Insert or update the single memory row tied to a Connections graph edge (unique relationship_id).
+   */
+  upsertMemoryForGraphRelationship(input: {
+    relationshipId: string
+    personId: string
+    memoryText: string
+    memoryDate: string
+  }): PersonMemory {
+    const db = this.adapter.getDb()
+    const id = uuidv4()
+    const now = new Date().toISOString()
+
+    db.prepare(
+      `
+      INSERT INTO person_memories (
+        id,
+        person_id,
+        recording_id,
+        relationship_id,
+        memory_text,
+        memory_type,
+        memory_date,
+        confidence,
+        source_quote,
+        created_at
+      )
+      VALUES (?, ?, NULL, ?, ?, 'relationship', ?, NULL, NULL, ?)
+      ON CONFLICT(relationship_id) WHERE relationship_id IS NOT NULL DO UPDATE SET
+        person_id = excluded.person_id,
+        memory_text = excluded.memory_text,
+        memory_date = excluded.memory_date,
+        recording_id = NULL
+    `,
+    ).run(
+      id,
+      input.personId,
+      input.relationshipId,
+      input.memoryText,
+      input.memoryDate,
+      now,
+    )
+
+    const row = db.prepare('SELECT * FROM person_memories WHERE relationship_id = ?').get(input.relationshipId) as
+      | PersonMemoryRow
+      | undefined
+    if (!row) {
+      throw new Error('Failed to upsert graph relationship memory')
+    }
+    return rowToPersonMemory(row)
+  }
+
+  deleteMemoriesByRelationshipId(relationshipId: string): number {
+    const db = this.adapter.getDb()
+    const result = db.prepare('DELETE FROM person_memories WHERE relationship_id = ?').run(relationshipId)
+    return result.changes
   }
 
   getRecordingsByPerson(personId: string, limit: number = 50): ConversationRecording[] {

@@ -6,10 +6,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Textarea } from '@/components/ui/textarea'
 import { speak, isSpeaking, stopSpeaking } from '@/shared/lib/voice'
 
+type QueryMemoriesFromTextSuccess = {
+  success: true
+  queryTranscript: string
+  answer: { answer: string; confidence: 'high' | 'medium' | 'low' }
+  matchedGraphRelationships?: Array<{
+    otherPersonName: string
+    relationshipType: string
+    notes: string | null
+  }>
+}
+
 type QueryState = {
   transcript: string
   answer: string
   confidence: 'high' | 'medium' | 'low'
+  graphEdgesSummary: string | null
 }
 
 export function MemoryQueryPanel(): React.JSX.Element {
@@ -29,10 +41,18 @@ export function MemoryQueryPanel(): React.JSX.Element {
         throw new Error(response.error ?? 'Query failed')
       }
 
+      const ok = response as unknown as QueryMemoriesFromTextSuccess
+      const edges = ok.matchedGraphRelationships ?? []
+      const graphEdgesSummary =
+        edges.length > 0
+          ? edges.map((e) => `${e.otherPersonName} (${e.relationshipType})`).join(' · ')
+          : null
+
       setResult({
-        transcript: response.queryTranscript,
-        answer: response.answer.answer,
-        confidence: response.answer.confidence,
+        transcript: ok.queryTranscript,
+        answer: ok.answer.answer,
+        confidence: ok.answer.confidence,
+        graphEdgesSummary,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Query failed'
@@ -103,6 +123,12 @@ export function MemoryQueryPanel(): React.JSX.Element {
             <p>
               <span className="font-medium">Answer:</span> {result.answer}
             </p>
+            {result.graphEdgesSummary ? (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Connections graph (evidence):</span>{' '}
+                {result.graphEdgesSummary}
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
               Confidence: {result.confidence}
             </p>
