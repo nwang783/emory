@@ -139,6 +139,33 @@ export function RegisterFaceModal({
     }, 1000)
   }
 
+  async function saveWithoutFace(): Promise<void> {
+    if (!name.trim()) {
+      toast.warning('Name is required')
+      return
+    }
+
+    setViewfinder({ phase: 'processing' })
+    try {
+      const person = await addPerson({
+        name: name.trim(),
+        relationship: relationship.trim() || undefined,
+        notes: notes.trim() || undefined,
+      })
+      toast.success(`Added ${person.name}`, {
+        description: 'You can register a face later from the edit screen.',
+      })
+      resetForm()
+      onOpenChange(false)
+    } catch (err) {
+      toast.error('Failed to add person', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
+      setViewfinder({ phase: 'live' })
+      attachStream()
+    }
+  }
+
   async function submitCapture(imageData: ImageData, source: 'photo_upload' | 'live_capture'): Promise<void> {
     if (!name.trim()) {
       toast.warning('Name is required')
@@ -267,18 +294,28 @@ export function RegisterFaceModal({
 
         {/* Capture controls */}
         {viewfinder.phase === 'live' && (
-          <div className="flex gap-2">
-            <Button className="flex-1" onClick={startCountdown} disabled={!streamReady}>
-              <Camera className="h-4 w-4" />
-              Take Photo
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={startCountdown} disabled={!streamReady}>
+                <Camera className="h-4 w-4" />
+                Take Photo
+              </Button>
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" />
+                Upload Instead
+              </Button>
+            </div>
             <Button
-              variant="secondary"
-              className="flex-1"
-              onClick={() => fileInputRef.current?.click()}
+              variant="ghost"
+              className="w-full text-muted-foreground"
+              onClick={saveWithoutFace}
+              disabled={!name.trim()}
             >
-              <Upload className="h-4 w-4" />
-              Upload Instead
+              Save without face photo
             </Button>
           </div>
         )}

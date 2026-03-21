@@ -41,7 +41,7 @@ const emoryApi = {
 
       findById: (id: string) => ipcRenderer.invoke('db:people:find-by-id', id),
 
-      update: (id: string, input: { name?: string; relationship?: string; notes?: string }) =>
+      update: (id: string, input: { name?: string; relationship?: string; notes?: string; bio?: string }) =>
         ipcRenderer.invoke('db:people:update', id, input),
 
       delete: (id: string) => ipcRenderer.invoke('db:people:delete', id),
