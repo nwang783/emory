@@ -10,6 +10,9 @@ import { CleanupService } from './services/cleanup.service.js'
 import { DeepgramService } from './services/deepgram.service.js'
 import { MemoryExtractionService } from './services/memory-extraction.service.js'
 import { ConversationProcessingService } from './services/conversation-processing.service.js'
+import { MemoryQueryUnderstandingService } from './services/memory-query-understanding.service.js'
+import { MemoryAnswerService } from './services/memory-answer.service.js'
+import { MemoryQueryService } from './services/memory-query.service.js'
 import { loadEnvironment } from './services/env.service.js'
 
 function getModelsDir(): string {
@@ -75,18 +78,27 @@ app.whenReady().then(() => {
   cleanupService.start()
   const deepgramService = new DeepgramService()
   const memoryExtractionService = new MemoryExtractionService()
+  const memoryQueryUnderstandingService = new MemoryQueryUnderstandingService()
+  const memoryAnswerService = new MemoryAnswerService()
   const conversationProcessingService = new ConversationProcessingService(
     conversationRepo,
     peopleRepo,
     deepgramService,
     memoryExtractionService,
   )
+  const memoryQueryService = new MemoryQueryService(
+    conversationRepo,
+    peopleRepo,
+    deepgramService,
+    memoryQueryUnderstandingService,
+    memoryAnswerService,
+  )
 
   const mainWindow = createWindow()
   registerFaceIpc(mainWindow, getModelsDir(), peopleRepo)
   registerEncounterIpc(mainWindow, encounterRepo)
   registerUnknownIpc(mainWindow, unknownRepo)
-  registerConversationIpc(mainWindow, conversationProcessingService, conversationRepo)
+  registerConversationIpc(mainWindow, conversationProcessingService, conversationRepo, memoryQueryService)
 
   app.on('before-quit', () => {
     cleanupService.stop()

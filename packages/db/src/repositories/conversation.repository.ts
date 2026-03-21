@@ -236,6 +236,53 @@ export class ConversationRepository {
     return rows.map(rowToPersonMemory)
   }
 
+  searchMemories(input: {
+    personIds?: string[]
+    startAt?: string | null
+    endAt?: string | null
+    searchText?: string | null
+    limit?: number
+  }): PersonMemory[] {
+    const db = this.adapter.getDb()
+    const conditions: string[] = []
+    const values: Array<string | number> = []
+
+    if (input.personIds && input.personIds.length > 0) {
+      const placeholders = input.personIds.map(() => '?').join(', ')
+      conditions.push(`person_id IN (${placeholders})`)
+      values.push(...input.personIds)
+    }
+
+    if (input.startAt) {
+      conditions.push('memory_date >= ?')
+      values.push(input.startAt)
+    }
+
+    if (input.endAt) {
+      conditions.push('memory_date <= ?')
+      values.push(input.endAt)
+    }
+
+    if (input.searchText && input.searchText.trim()) {
+      conditions.push('(lower(memory_text) LIKE ? OR lower(COALESCE(source_quote, \'\')) LIKE ?)')
+      const likeValue = `%${input.searchText.trim().toLowerCase()}%`
+      values.push(likeValue, likeValue)
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const limit = Math.max(1, input.limit ?? 20)
+
+    const rows = db.prepare(`
+      SELECT *
+      FROM person_memories
+      ${whereClause}
+      ORDER BY memory_date DESC, created_at DESC
+      LIMIT ?
+    `).all(...values, limit) as PersonMemoryRow[]
+
+    return rows.map(rowToPersonMemory)
+  }
+
   getRecordingsByPerson(personId: string, limit: number = 20): ConversationRecording[] {
     const db = this.adapter.getDb()
     const rows = db.prepare(`
@@ -245,6 +292,52 @@ export class ConversationRepository {
       ORDER BY recorded_at DESC, created_at DESC
       LIMIT ?
     `).all(personId, limit) as ConversationRecordingRow[]
+
+    return rows.map(rowToConversationRecording)
+  }
+
+  searchRecordings(input: {
+    personIds?: string[]
+    startAt?: string | null
+    endAt?: string | null
+    transcriptSearchText?: string | null
+    limit?: number
+  }): ConversationRecording[] {
+    const db = this.adapter.getDb()
+    const conditions: string[] = []
+    const values: Array<string | number> = []
+
+    if (input.personIds && input.personIds.length > 0) {
+      const placeholders = input.personIds.map(() => '?').join(', ')
+      conditions.push(`person_id IN (${placeholders})`)
+      values.push(...input.personIds)
+    }
+
+    if (input.startAt) {
+      conditions.push('recorded_at >= ?')
+      values.push(input.startAt)
+    }
+
+    if (input.endAt) {
+      conditions.push('recorded_at <= ?')
+      values.push(input.endAt)
+    }
+
+    if (input.transcriptSearchText && input.transcriptSearchText.trim()) {
+      conditions.push('lower(COALESCE(transcript_raw_text, \'\')) LIKE ?')
+      values.push(`%${input.transcriptSearchText.trim().toLowerCase()}%`)
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const limit = Math.max(1, input.limit ?? 20)
+
+    const rows = db.prepare(`
+      SELECT *
+      FROM conversation_recordings
+      ${whereClause}
+      ORDER BY recorded_at DESC, created_at DESC
+      LIMIT ?
+    `).all(...values, limit) as ConversationRecordingRow[]
 
     return rows.map(rowToConversationRecording)
   }

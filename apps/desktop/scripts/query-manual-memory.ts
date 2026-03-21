@@ -1,17 +1,17 @@
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { SqliteAdapter, ConversationRepository, PeopleRepository } from '@emory/db'
-import { ConversationProcessingService } from '../src/main/services/conversation-processing.service.js'
 import { DeepgramService } from '../src/main/services/deepgram.service.js'
 import { loadEnvironment } from '../src/main/services/env.service.js'
-import { MemoryExtractionService } from '../src/main/services/memory-extraction.service.js'
+import { MemoryAnswerService } from '../src/main/services/memory-answer.service.js'
+import { MemoryQueryService } from '../src/main/services/memory-query.service.js'
+import { MemoryQueryUnderstandingService } from '../src/main/services/memory-query-understanding.service.js'
 import { seedManualDemoData } from './manual-demo-data.js'
 
 type CliOptions = {
   audioPath: string
   mimeType: string
-  recordedAt: string
-  durationMs: number | null
+  askedAt: string
   dbPath: string
   selfName: string
   targetName: string
@@ -37,15 +37,10 @@ function parseArgs(argv: string[]): CliOptions {
     throw new Error('Missing required --audio-path')
   }
 
-  const recordedAt = args.get('--recorded-at') ?? new Date().toISOString()
-  const durationValue = args.get('--duration-ms')
-  const durationMs = durationValue ? Number(durationValue) : null
-
   return {
     audioPath,
     mimeType: args.get('--mime-type') ?? inferMimeType(audioPath),
-    recordedAt,
-    durationMs: Number.isFinite(durationMs) ? durationMs : null,
+    askedAt: args.get('--asked-at') ?? new Date().toISOString(),
     dbPath: args.get('--db-path') ?? path.resolve(process.cwd(), '../../tmp/manual-test/emory.db'),
     selfName: args.get('--self-name') ?? 'Grandma Test',
     targetName: args.get('--target-name') ?? 'Ryan',
@@ -82,36 +77,32 @@ async function main(): Promise<void> {
   const peopleRepo = new PeopleRepository(adapter)
   const conversationRepo = new ConversationRepository(adapter)
   const deepgramService = new DeepgramService()
-  const memoryExtractionService = new MemoryExtractionService()
-  const processingService = new ConversationProcessingService(
+  const understandingService = new MemoryQueryUnderstandingService()
+  const answerService = new MemoryAnswerService()
+  const queryService = new MemoryQueryService(
     conversationRepo,
     peopleRepo,
     deepgramService,
-    memoryExtractionService,
+    understandingService,
+    answerService,
   )
 
-  const { selfPerson, targetPerson } = seedManualDemoData(peopleRepo, {
+  const seed = seedManualDemoData(peopleRepo, {
     selfName: options.selfName,
     targetName: options.targetName,
   })
 
-  const result = await processingService.processRecording({
-    personId: targetPerson.id,
+  const result = await queryService.queryFromAudio({
     audioPath: options.audioPath,
     mimeType: options.mimeType,
-    recordedAt: options.recordedAt,
-    durationMs: options.durationMs,
+    askedAt: options.askedAt,
   })
-
-  const latestMemories = conversationRepo.getMemoriesByPerson(targetPerson.id, 10)
 
   console.log(JSON.stringify({
     dbPath: options.dbPath,
-    selfPerson,
-    targetPerson,
-    recording: result.recording,
-    insertedMemories: result.memories,
-    latestMemories,
+    selfPerson: seed.selfPerson,
+    targetPerson: seed.targetPerson,
+    ...result,
   }, null, 2))
 
   adapter.close()
