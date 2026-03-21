@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FolderOpen, RotateCcw } from 'lucide-react'
+import {
+  Archive,
+  CloudUpload,
+  FolderOpen,
+  Gauge,
+  Monitor,
+  RotateCcw,
+  ScanFace,
+  User,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -8,6 +17,13 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  MiniSidebarNav,
+  type MiniSidebarNavItem,
+  PageHeader,
+  PageShell,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 import { Textarea } from '@/components/ui/textarea'
 import { useSettingsStore } from '@/shared/stores/settings.store'
 import { RemoteIngestSettings } from './RemoteIngestSettings'
@@ -430,27 +446,70 @@ function RetentionSettings(): React.JSX.Element {
   )
 }
 
+type SettingsSectionId =
+  | 'profile'
+  | 'recognition'
+  | 'display'
+  | 'performance'
+  | 'storage'
+  | 'ingest'
+  | 'retention'
+
+const SETTINGS_NAV: MiniSidebarNavItem[] = [
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'recognition', label: 'Recognition', icon: ScanFace },
+  { id: 'display', label: 'Display', icon: Monitor },
+  { id: 'performance', label: 'Performance', icon: Gauge },
+  { id: 'storage', label: 'Recordings', icon: FolderOpen },
+  { id: 'ingest', label: 'Remote ingest', icon: CloudUpload },
+  { id: 'retention', label: 'Retention', icon: Archive },
+]
+
 export function SettingsPanel(): React.JSX.Element {
   const resetToDefaults = useSettingsStore((s) => s.resetToDefaults)
+  const [section, setSection] = useState<SettingsSectionId>('profile')
 
   return (
-    <ScrollArea className="h-full">
-      <section className="mx-auto flex max-w-xl flex-col gap-4 p-6">
-        <h2 className="text-lg font-semibold tracking-tight">Settings</h2>
-
-        <UserProfileSettings />
-        <RecognitionSettings />
-        <DisplaySettings />
-        <PerformanceSettings />
-        <ConversationStorageSettings />
-        <RemoteIngestSettings />
-        <RetentionSettings />
-
-        <Button variant="outline" className="mt-2 self-start gap-2" onClick={resetToDefaults}>
-          <RotateCcw className="h-3.5 w-3.5" />
-          Reset to Defaults
-        </Button>
-      </section>
-    </ScrollArea>
+    <PageShell>
+      <PageHeader
+        sticky
+        title="Settings"
+        titleClassName="font-heading text-lg"
+        description="Recognition, storage, remote ingest, and retention."
+      />
+      <PageWorkspace
+        miniSidebar={
+          <MiniSidebarNav
+            label="Categories"
+            items={SETTINGS_NAV}
+            activeId={section}
+            onSelect={(id) => setSection(id as SettingsSectionId)}
+            footer={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-full gap-1.5 text-xs"
+                onClick={resetToDefaults}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset defaults
+              </Button>
+            }
+          />
+        }
+      >
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="mx-auto max-w-2xl space-y-5 px-5 py-6 pb-12 sm:px-6">
+            {section === 'profile' ? <UserProfileSettings /> : null}
+            {section === 'recognition' ? <RecognitionSettings /> : null}
+            {section === 'display' ? <DisplaySettings /> : null}
+            {section === 'performance' ? <PerformanceSettings /> : null}
+            {section === 'storage' ? <ConversationStorageSettings /> : null}
+            {section === 'ingest' ? <RemoteIngestSettings /> : null}
+            {section === 'retention' ? <RetentionSettings /> : null}
+          </div>
+        </ScrollArea>
+      </PageWorkspace>
+    </PageShell>
   )
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import { LayoutDashboard, UserRound, UserX } from 'lucide-react'
 import { SummaryCards } from './SummaryCards'
 import { FrequentVisitors } from './FrequentVisitors'
 import { RecentEncounters } from './RecentEncounters'
@@ -11,6 +10,14 @@ import {
   formatGraphEdgeLabel,
   type RelationshipEndpointRow,
 } from '@/shared/lib/graph-relationship-labels'
+import {
+  MiniSidebarNav,
+  type MiniSidebarNavItem,
+  PageHeader,
+  PageScroll,
+  PageShell,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 
 const SEVEN_DAYS_MS = 7 * 86_400_000
 const THIRTY_DAYS_MS = 30 * 86_400_000
@@ -45,7 +52,16 @@ function computeFrequentVisitors(
     .slice(0, 10)
 }
 
+type AnalyticsSection = 'summary' | 'relations' | 'unknowns'
+
+const ANALYTICS_NAV: MiniSidebarNavItem[] = [
+  { id: 'summary', label: 'Overview', icon: LayoutDashboard },
+  { id: 'relations', label: 'People', icon: UserRound },
+  { id: 'unknowns', label: 'Unknowns', icon: UserX },
+]
+
 export function AnalyticsDashboard(): React.JSX.Element {
+  const [section, setSection] = useState<AnalyticsSection>('summary')
   const [people, setPeople] = useState<AnalyticsPerson[]>([])
   const [encounters, setEncounters] = useState<AnalyticsEncounter[]>([])
   const [unknowns, setUnknowns] = useState<AnalyticsUnknown[]>([])
@@ -96,32 +112,51 @@ export function AnalyticsDashboard(): React.JSX.Element {
   )
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="px-6 pt-6 pb-2">
-        <h2 className="text-lg font-semibold tracking-tight">Analytics</h2>
-        <p className="text-xs text-muted-foreground">Overview of recognition activity and sightings</p>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Analytics"
+        description="Encounters, frequent visitors, and unknown sightings."
+      />
 
-      <Separator />
-
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-5 px-6 py-5">
-          <SummaryCards
-            totalPeople={people.length}
-            totalEncounters={encounters.length}
-            recentEncounters={recentSevenDays}
-            activeUnknowns={activeUnknowns}
-            loading={loading}
+      <PageWorkspace
+        miniSidebar={
+          <MiniSidebarNav
+            label="Views"
+            items={ANALYTICS_NAV}
+            activeId={section}
+            onSelect={(id) => setSection(id as AnalyticsSection)}
           />
+        }
+      >
+        <PageScroll maxWidth="7xl" innerClassName="flex flex-col gap-8 pb-8">
+          {section === 'summary' ? (
+            <>
+              <SummaryCards
+                totalPeople={people.length}
+                totalEncounters={encounters.length}
+                recentEncounters={recentSevenDays}
+                activeUnknowns={activeUnknowns}
+                loading={loading}
+              />
+              <div className="grid gap-6 lg:grid-cols-2">
+                <FrequentVisitors visitors={frequentVisitors} loading={loading} />
+                <RecentEncounters encounters={encounters} loading={loading} />
+              </div>
+            </>
+          ) : null}
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <FrequentVisitors visitors={frequentVisitors} loading={loading} />
-            <RecentEncounters encounters={encounters} loading={loading} />
-          </div>
+          {section === 'relations' ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <FrequentVisitors visitors={frequentVisitors} loading={loading} />
+              <RecentEncounters encounters={encounters} loading={loading} />
+            </div>
+          ) : null}
 
-          <UnknownSightings sightings={unknowns} loading={loading} />
-        </div>
-      </ScrollArea>
-    </section>
+          {section === 'unknowns' ? (
+            <UnknownSightings sightings={unknowns} loading={loading} />
+          ) : null}
+        </PageScroll>
+      </PageWorkspace>
+    </PageShell>
   )
 }

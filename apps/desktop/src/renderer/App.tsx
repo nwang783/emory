@@ -26,14 +26,14 @@ function CameraView(): React.JSX.Element {
     <div className="flex h-full overflow-hidden">
       <section className="relative flex flex-1 flex-col items-center justify-center">
         {modelStatus === 'loading' && (
-          <div className="absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-lg">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-            <span className="text-xs text-muted-foreground">Downloading face models…</span>
+          <div className="absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Downloading face models…</span>
           </div>
         )}
         {modelStatus === 'error' && (
-          <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2">
-            <Badge variant="destructive" className="text-xs">
+          <div className="absolute top-4 left-1/2 z-10 -translate-x-1/2">
+            <Badge variant="destructive" className="max-w-md text-xs font-normal">
               Model load failed — face recognition disabled
             </Badge>
           </div>
@@ -41,7 +41,10 @@ function CameraView(): React.JSX.Element {
         <WebcamFeed />
       </section>
 
-      <aside className="flex w-[30%] flex-col overflow-hidden border-l border-border bg-card">
+      <aside
+        className="flex w-[min(30%,300px)] min-w-[220px] flex-col overflow-hidden border-l border-border bg-card/50"
+        aria-label="People on camera"
+      >
         <PeopleList />
       </aside>
     </div>
@@ -97,13 +100,13 @@ export function App(): React.JSX.Element {
   }, [setModelStatus, setError, loadPeople])
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={280}>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
         <Header />
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
-          <main className="flex-1 overflow-hidden">
+          <main className="app-main-surface min-h-0 flex-1 overflow-hidden">
             <ErrorBoundary>
               <MainContent />
             </ErrorBoundary>
