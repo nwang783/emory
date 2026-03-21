@@ -41,4 +41,5 @@ export type {
   PersonMemory,
   PersonMemoryRow,
   CreatePersonMemoryInput,
+  UpdatePersonMemoryInput,
 } from './types.js'

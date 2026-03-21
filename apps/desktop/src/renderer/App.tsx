@@ -13,6 +13,7 @@ import { ActivityFeed } from './modules/activity/components/ActivityFeed'
 import { AnalyticsDashboard } from './modules/analytics/components/AnalyticsDashboard'
 import { EmbeddingGallery } from './modules/embeddings/components/EmbeddingGallery'
 import { ConnectionsGraph } from './modules/connections/components/ConnectionsGraph'
+import { MemoryBrowser } from './modules/memories/components/MemoryBrowser'
 import { ErrorBoundary } from './shared/components/ErrorBoundary'
 import { useFaceStore } from './shared/stores/face.store'
 import { usePeopleStore } from './shared/stores/people.store'
@@ -65,6 +66,8 @@ function MainContent(): React.JSX.Element {
       return <AnalyticsDashboard />
     case 'embeddings':
       return <EmbeddingGallery />
+    case 'memories':
+      return <MemoryBrowser />
   }
 }
 

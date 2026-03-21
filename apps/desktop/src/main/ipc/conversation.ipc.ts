@@ -201,4 +201,57 @@ export function registerConversationIpc(
       return { success: false, error: message }
     }
   })
+
+  ipcMain.handle('conversation:get-all-memories', (_event, limit?: number) => {
+    try {
+      return conversationRepo.getAllMemories(limit ?? 50)
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(
+    'conversation:search-memories',
+    (
+      _event,
+      input: {
+        personIds?: string[]
+        startAt?: string | null
+        endAt?: string | null
+        searchText?: string | null
+        limit?: number
+      },
+    ) => {
+      console.log('[conversation:search-memories] input:', JSON.stringify(input))
+      try {
+        const result = conversationRepo.searchMemories(input)
+        console.log('[conversation:search-memories] result count:', result.length)
+        return result
+      } catch (err) {
+        console.error('[conversation:search-memories] error:', err)
+        return []
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'conversation:update-memory',
+    (_event, id: string, input: { memoryText?: string; memoryType?: string; memoryDate?: string }) => {
+      if (typeof id !== 'string' || id.length === 0) return null
+      try {
+        return conversationRepo.updateMemory(id, input)
+      } catch {
+        return null
+      }
+    },
+  )
+
+  ipcMain.handle('conversation:delete-memory', (_event, id: string) => {
+    if (typeof id !== 'string' || id.length === 0) return false
+    try {
+      return conversationRepo.deleteMemory(id)
+    } catch {
+      return false
+    }
+  })
 }

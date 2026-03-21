@@ -197,6 +197,20 @@ const emoryApi = {
       askedAt?: string
     }) =>
       ipcRenderer.invoke('conversation:query-memories-from-text', input),
+    getAllMemories: (limit?: number) =>
+      ipcRenderer.invoke('conversation:get-all-memories', limit),
+    searchMemories: (input: {
+      personIds?: string[]
+      startAt?: string | null
+      endAt?: string | null
+      searchText?: string | null
+      limit?: number
+    }) =>
+      ipcRenderer.invoke('conversation:search-memories', input),
+    updateMemory: (id: string, input: { memoryText?: string; memoryType?: string; memoryDate?: string }) =>
+      ipcRenderer.invoke('conversation:update-memory', id, input),
+    deleteMemory: (id: string) =>
+      ipcRenderer.invoke('conversation:delete-memory', id),
   },
 } as const
 
