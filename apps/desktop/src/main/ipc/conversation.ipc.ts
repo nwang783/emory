@@ -13,7 +13,11 @@ import type {
   ConversationProcessingService,
   ProcessRecordingInput,
 } from '../services/conversation-processing.service.js'
-import type { MemoryQueryService, QueryMemoriesInput } from '../services/memory-query.service.js'
+import type {
+  MemoryQueryService,
+  QueryMemoriesFromTextInput,
+  QueryMemoriesInput,
+} from '../services/memory-query.service.js'
 import { getActiveSessionId } from './encounter.ipc.js'
 
 type SaveAndProcessPayload = {
@@ -181,6 +185,16 @@ export function registerConversationIpc(
   ipcMain.handle('conversation:query-memories', async (_event, input: QueryMemoriesInput) => {
     try {
       const result = await memoryQueryService.queryFromAudio(input)
+      return { success: true, ...result }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
+    }
+  })
+
+  ipcMain.handle('conversation:query-memories-from-text', async (_event, input: QueryMemoriesFromTextInput) => {
+    try {
+      const result = await memoryQueryService.queryFromText(input)
       return { success: true, ...result }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

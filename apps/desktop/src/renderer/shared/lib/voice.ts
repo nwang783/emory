@@ -1,38 +1,53 @@
 let speaking = false
+let activeAudio: HTMLAudioElement | null = null
+let activeObjectUrl: string | null = null
 
-export function speak(text: string, rate: number = 0.9): Promise<void> {
+function cleanup(): void {
+  if (activeAudio) {
+    activeAudio.pause()
+    activeAudio.src = ''
+    activeAudio = null
+  }
+  if (activeObjectUrl) {
+    URL.revokeObjectURL(activeObjectUrl)
+    activeObjectUrl = null
+  }
+  speaking = false
+}
+
+export async function speak(text: string): Promise<void> {
+  const trimmedText = text.trim()
+  if (!trimmedText) {
+    throw new Error('Speech text was empty')
+  }
+
+  if (speaking) {
+    stopSpeaking()
+  }
+
+  const { audioBytes, mimeType } = await window.emoryApi.tts.synthesize({ text: trimmedText })
+  const blob = new Blob([audioBytes], { type: mimeType || 'audio/wav' })
+  const objectUrl = URL.createObjectURL(blob)
+  const audio = new Audio(objectUrl)
+
+  activeAudio = audio
+  activeObjectUrl = objectUrl
+  speaking = true
+
   return new Promise((resolve, reject) => {
-    if (!window.speechSynthesis) {
-      reject(new Error('Speech synthesis not available'))
-      return
-    }
-
-    if (speaking) {
-      window.speechSynthesis.cancel()
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = rate
-    utterance.pitch = 1.0
-    utterance.volume = 1.0
-
-    const voices = window.speechSynthesis.getVoices()
-    const englishVoice = voices.find((v) => v.lang.startsWith('en') && v.localService)
-    if (englishVoice) utterance.voice = englishVoice
-
-    utterance.onstart = () => {
-      speaking = true
-    }
-    utterance.onend = () => {
-      speaking = false
+    audio.onended = () => {
+      cleanup()
       resolve()
     }
-    utterance.onerror = (e) => {
-      speaking = false
-      reject(e)
+    audio.onerror = () => {
+      cleanup()
+      reject(new Error('Audio playback failed'))
     }
 
-    window.speechSynthesis.speak(utterance)
+    audio.play().catch((error) => {
+      cleanup()
+      reject(error)
+    })
   })
 }
 
@@ -41,6 +56,5 @@ export function isSpeaking(): boolean {
 }
 
 export function stopSpeaking(): void {
-  speaking = false
-  window.speechSynthesis?.cancel()
+  cleanup()
 }

@@ -135,8 +135,28 @@ const emoryApi = {
     getModelsDir: (): Promise<string> => ipcRenderer.invoke('app:get-models-dir'),
     getUserDataDir: (): Promise<string> => ipcRenderer.invoke('app:get-user-data-dir'),
     getConversationsDir: (): Promise<string> => ipcRenderer.invoke('app:get-conversations-dir'),
+    getTtsDir: (): Promise<string> => ipcRenderer.invoke('app:get-tts-dir'),
     openConversationsFolder: (): Promise<{ success: true } | { success: false; error: string }> =>
       ipcRenderer.invoke('app:open-conversations-folder'),
+    openTtsFolder: (): Promise<{ success: true } | { success: false; error: string }> =>
+      ipcRenderer.invoke('app:open-tts-folder'),
+  },
+
+  tts: {
+    synthesize: (input: { text: string }) =>
+      ipcRenderer.invoke('tts:synthesize', input).then((result) => {
+        if (!result?.success) {
+          throw new Error(result?.error ?? 'TTS synthesis failed')
+        }
+
+        const audioBytes =
+          result.audioBytes instanceof Uint8Array ? result.audioBytes : new Uint8Array(result.audioBytes)
+
+        return {
+          mimeType: result.mimeType as string,
+          audioBytes,
+        }
+      }),
   },
 
   conversation: {
@@ -170,6 +190,11 @@ const emoryApi = {
       askedAt?: string
     }) =>
       ipcRenderer.invoke('conversation:query-memories', input),
+    queryMemoriesFromText: (input: {
+      queryText: string
+      askedAt?: string
+    }) =>
+      ipcRenderer.invoke('conversation:query-memories-from-text', input),
   },
 } as const
 

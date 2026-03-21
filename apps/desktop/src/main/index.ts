@@ -7,7 +7,9 @@ import { registerDbIpc } from './ipc/db.ipc.js'
 import { registerEncounterIpc } from './ipc/encounter.ipc.js'
 import { registerUnknownIpc } from './ipc/unknown.ipc.js'
 import { registerConversationIpc } from './ipc/conversation.ipc.js'
+import { registerTtsIpc } from './ipc/tts.ipc.js'
 import { CleanupService } from './services/cleanup.service.js'
+import { CartesiaTtsService, getTtsRootDir } from './services/cartesia-tts.service.js'
 import { getConversationsRootDir } from './services/conversation-storage.service.js'
 import { DeepgramService } from './services/deepgram.service.js'
 import { MemoryExtractionService } from './services/memory-extraction.service.js'
@@ -74,8 +76,16 @@ app.whenReady().then(() => {
   ipcMain.handle('app:get-models-dir', () => getModelsDir())
   ipcMain.handle('app:get-user-data-dir', () => app.getPath('userData'))
   ipcMain.handle('app:get-conversations-dir', () => getConversationsRootDir())
+  ipcMain.handle('app:get-tts-dir', () => getTtsRootDir())
   ipcMain.handle('app:open-conversations-folder', async () => {
     const dir = getConversationsRootDir()
+    await mkdir(dir, { recursive: true })
+    const err = await shell.openPath(dir)
+    if (err === '') return { success: true as const }
+    return { success: false as const, error: err }
+  })
+  ipcMain.handle('app:open-tts-folder', async () => {
+    const dir = getTtsRootDir()
     await mkdir(dir, { recursive: true })
     const err = await shell.openPath(dir)
     if (err === '') return { success: true as const }
@@ -87,6 +97,7 @@ app.whenReady().then(() => {
   const cleanupService = new CleanupService(retentionRepo, encounterRepo, unknownRepo)
   cleanupService.start()
   const deepgramService = new DeepgramService()
+  const cartesiaTtsService = new CartesiaTtsService()
   const memoryExtractionService = new MemoryExtractionService()
   const memoryQueryUnderstandingService = new MemoryQueryUnderstandingService()
   const memoryAnswerService = new MemoryAnswerService()
@@ -108,6 +119,7 @@ app.whenReady().then(() => {
   registerFaceIpc(mainWindow, getModelsDir(), peopleRepo)
   registerEncounterIpc(mainWindow, encounterRepo)
   registerUnknownIpc(mainWindow, unknownRepo)
+  registerTtsIpc(cartesiaTtsService)
   registerConversationIpc(
     mainWindow,
     conversationProcessingService,

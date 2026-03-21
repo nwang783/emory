@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Camera, CameraOff, GraduationCap } from 'lucide-react'
+import { Camera, CameraOff, GraduationCap, MessageSquareText } from 'lucide-react'
 import { useWebcam } from '../hooks/useWebcam'
 import { useFaceStore } from '@/shared/stores/face.store'
 import { useSettingsStore } from '@/shared/stores/settings.store'
@@ -7,6 +7,7 @@ import { useActivityStore } from '@/shared/stores/activity.store'
 import { usePeopleStore } from '@/shared/stores/people.store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { MemoryQueryPanel } from './MemoryQueryPanel'
 import { WhoIsThisButton } from './WhoIsThisButton'
 import { useConversationRecorder } from '../hooks/useConversationRecorder'
 
@@ -111,6 +112,7 @@ export function WebcamFeed(): React.JSX.Element {
   const detectInFlightRef = useRef(false)
   const identifyInFlightRef = useRef(false)
   const [autoLearnCount, setAutoLearnCount] = useState(0)
+  const [showMemoryQueryPanel, setShowMemoryQueryPanel] = useState(false)
   const [identifiedPeople, setIdentifiedPeople] = useState<
     Array<{ label: string; personId: string; similarity: number; relationship?: string | null }>
   >([])
@@ -523,7 +525,7 @@ export function WebcamFeed(): React.JSX.Element {
   }, [isActive, runDetection, runIdentification, drawOverlay])
 
   return (
-    <div className="relative flex h-full w-full flex-col items-center justify-center gap-4">
+    <div className="relative flex h-full w-full flex-col items-center justify-center gap-4 overflow-y-auto p-4">
       <div className="relative overflow-hidden rounded-lg border border-border shadow-lg">
         <video ref={videoRef} className="max-h-[calc(100vh-10rem)] bg-muted" muted playsInline />
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
@@ -570,7 +572,7 @@ export function WebcamFeed(): React.JSX.Element {
         </p>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
         {!isActive ? (
           <Button onClick={start} size="lg">
             <Camera />
@@ -585,7 +587,17 @@ export function WebcamFeed(): React.JSX.Element {
             <WhoIsThisButton identifiedPeople={identifiedPeople} />
           </>
         )}
+        <Button
+          variant={showMemoryQueryPanel ? 'secondary' : 'outline'}
+          size="lg"
+          onClick={() => setShowMemoryQueryPanel((current) => !current)}
+        >
+          <MessageSquareText />
+          {showMemoryQueryPanel ? 'Hide Query Simulator' : 'Show Query Simulator'}
+        </Button>
       </div>
+
+      {showMemoryQueryPanel ? <MemoryQueryPanel /> : null}
     </div>
   )
 }
