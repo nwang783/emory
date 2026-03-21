@@ -54,6 +54,7 @@ struct StreamDashboardView: View {
                 // MARK: Stream Control
                 if viewModel.sessionState == .streaming || viewModel.sessionState == .starting {
                     Button {
+                        Haptics.medium()
                         viewModel.stopSession()
                     } label: {
                         HStack(spacing: 8) {
@@ -71,6 +72,7 @@ struct StreamDashboardView: View {
                     }
                 } else {
                     Button {
+                        Haptics.medium()
                         viewModel.startSession()
                     } label: {
                         HStack(spacing: 8) {
@@ -131,6 +133,7 @@ struct StreamDashboardView: View {
                 // MARK: Mic Controls
                 HStack(spacing: 12) {
                     Button {
+                        Haptics.light()
                         if viewModel.isMicCapturing {
                             viewModel.stopMicOnly()
                         } else {
