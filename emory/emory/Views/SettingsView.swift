@@ -79,7 +79,7 @@ struct SettingsView: View {
                             .font(.system(size: settings.fontSize.bodySize, weight: .medium))
                             .foregroundStyle(EmoryTheme.textPrimary)
 
-                        HStack(spacing: 0) {
+                        HStack(spacing: 8) {
                             ForEach(EmoryTheme.FontSize.allCases, id: \.self) { size in
                                 Button {
                                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -88,14 +88,27 @@ struct SettingsView: View {
                                 } label: {
                                     Text(size.rawValue)
                                         .font(.system(size: 14, weight: settings.fontSize == size ? .semibold : .regular))
-                                        .foregroundStyle(settings.fontSize == size ? .white : EmoryTheme.textPrimary)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                        .background(settings.fontSize == size ? EmoryTheme.primary : Color(.systemGray6))
+                                        .foregroundStyle(settings.fontSize == size ? EmoryTheme.primary : EmoryTheme.textPrimary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            settings.fontSize == size
+                                                ? EmoryTheme.primary.opacity(0.1)
+                                                : Color.clear
+                                        )
+                                        .clipShape(Capsule())
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(
+                                                    settings.fontSize == size
+                                                        ? EmoryTheme.primary.opacity(0.3)
+                                                        : Color.clear,
+                                                    lineWidth: 1
+                                                )
+                                        )
                                 }
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
 
@@ -134,26 +147,27 @@ struct SettingsView: View {
                 }
 
                 // Emory branding
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     ZStack {
                         Circle()
-                            .fill(EmoryTheme.primary.opacity(0.15))
-                            .frame(width: 60, height: 60)
+                            .fill(EmoryTheme.primary)
+                            .frame(width: 64, height: 64)
                         Image(systemName: "eye.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(EmoryTheme.primary)
+                            .font(.system(size: 26))
+                            .foregroundStyle(.white)
                     }
 
                     Text("Emory")
-                        .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
-                        .foregroundStyle(EmoryTheme.textPrimary)
+                        .font(.system(size: settings.fontSize.bodySize, weight: .bold))
+                        .foregroundStyle(EmoryTheme.primary)
 
                     Text("Empowering independent living.")
                         .font(.system(size: settings.fontSize.captionSize))
                         .foregroundStyle(EmoryTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, 8)
+                .padding(.vertical, 20)
+                .emoryCard()
                 .padding(.bottom, 40)
             }
             .padding(.horizontal, 24)

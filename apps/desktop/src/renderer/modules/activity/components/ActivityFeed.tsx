@@ -1,11 +1,21 @@
-import { useMemo } from 'react'
-import { Eye, GraduationCap, UserPlus, UserMinus, ScanFace, Inbox } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Eye, GraduationCap, UserPlus, UserMinus, ScanFace, Inbox, LayoutList } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { useActivityStore, type ActivityEvent } from '@/shared/stores/activity.store'
+import {
+  MiniSidebarNav,
+  type MiniSidebarNavItem,
+  PageHeader,
+  PageScroll,
+  PageShell,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 
-const TYPE_CONFIG: Record<ActivityEvent['type'], { icon: React.ElementType; label: string; variant: 'default' | 'secondary' | 'outline' }> = {
+const TYPE_CONFIG: Record<
+  ActivityEvent['type'],
+  { icon: React.ElementType; label: string; variant: 'default' | 'secondary' | 'outline' }
+> = {
   recognition: { icon: Eye, label: 'Recognised', variant: 'default' },
   auto_learn: { icon: GraduationCap, label: 'Auto-learn', variant: 'secondary' },
   registration: { icon: ScanFace, label: 'Registered', variant: 'secondary' },
@@ -28,29 +38,27 @@ function ActivityItem({ event }: { event: ActivityEvent }): React.JSX.Element {
   const Icon = config.icon
 
   return (
-    <div className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/50">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+    <div className="flex items-start gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:border-border hover:bg-muted/40">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted">
         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {event.personName && (
-            <span className="truncate text-sm font-medium">{event.personName}</span>
+            <span className="truncate text-sm font-medium text-foreground">{event.personName}</span>
           )}
           <Badge variant={config.variant} className="shrink-0 text-[10px]">
             {config.label}
           </Badge>
         </div>
 
-        <p className="truncate text-xs text-muted-foreground">{event.details}</p>
+        <p className="text-xs text-muted-foreground">{event.details}</p>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">
-            {formatRelativeTime(event.timestamp)}
-          </span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-[10px] text-muted-foreground">{formatRelativeTime(event.timestamp)}</span>
           {event.similarity !== null && (
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[10px] tabular-nums text-muted-foreground">
               {(event.similarity * 100).toFixed(0)}% match
             </span>
           )}
@@ -62,43 +70,95 @@ function ActivityItem({ event }: { event: ActivityEvent }): React.JSX.Element {
 
 function EmptyState(): React.JSX.Element {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+    <div className="flex min-h-[min(50vh,420px)] flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground">
       <Inbox className="h-10 w-10 opacity-40" />
-      <p className="text-sm">No activity yet</p>
-      <p className="max-w-[200px] text-center text-xs opacity-70">
-        Recognition events and auto-learns will appear here
-      </p>
+      <div>
+        <p className="text-sm font-medium text-foreground">No activity yet</p>
+        <p className="mt-1 max-w-xs text-xs">Recognition, registration, and auto-learn events will show here.</p>
+      </div>
     </div>
   )
 }
 
+type ActivityFilter = 'all' | ActivityEvent['type']
+
+const FILTER_NAV: MiniSidebarNavItem[] = [
+  { id: 'all', label: 'All', icon: LayoutList },
+  { id: 'recognition', label: 'Recognised', icon: Eye },
+  { id: 'auto_learn', label: 'Auto-learn', icon: GraduationCap },
+  { id: 'registration', label: 'Registered', icon: ScanFace },
+  { id: 'person_added', label: 'Added', icon: UserPlus },
+  { id: 'person_removed', label: 'Removed', icon: UserMinus },
+]
+
 export function ActivityFeed(): React.JSX.Element {
   const events = useActivityStore((s) => s.events)
   const clearEvents = useActivityStore((s) => s.clearEvents)
-  const hasEvents = useMemo(() => events.length > 0, [events.length])
+  const [filter, setFilter] = useState<ActivityFilter>('all')
+
+  const filteredEvents = useMemo(() => {
+    if (filter === 'all') return events
+    return events.filter((e) => e.type === filter)
+  }, [events, filter])
+
+  const hasEvents = events.length > 0
+  const hasFiltered = filteredEvents.length > 0
+
+  const navItems = useMemo(
+    () =>
+      FILTER_NAV.map((item) => {
+        if (item.id === 'all') {
+          return { ...item, badge: String(events.length) }
+        }
+        const count = events.filter((e) => e.type === item.id).length
+        return { ...item, badge: String(count) }
+      }),
+    [events],
+  )
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 pt-6 pb-3">
-        <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
-        {hasEvents && (
-          <Button variant="ghost" size="sm" className="text-xs" onClick={clearEvents}>
-            Clear
-          </Button>
-        )}
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Activity"
+        description="Recent recognition and profile events, newest first."
+        actions={
+          hasEvents ? (
+            <Button variant="outline" size="sm" className="text-xs" onClick={clearEvents}>
+              Clear all
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {hasEvents ? (
-        <ScrollArea className="flex-1 px-3">
-          <div className="flex flex-col gap-0.5 pb-4">
-            {events.map((event) => (
-              <ActivityItem key={event.id} event={event} />
-            ))}
-          </div>
-        </ScrollArea>
-      ) : (
-        <EmptyState />
-      )}
-    </section>
+      <PageWorkspace
+        miniSidebar={
+          <MiniSidebarNav
+            label="Filter"
+            items={navItems}
+            activeId={filter}
+            onSelect={(id) => setFilter(id as ActivityFilter)}
+          />
+        }
+      >
+        <PageScroll maxWidth="3xl">
+          {hasFiltered ? (
+            <div className="flex flex-col gap-1 pb-6">
+              {filteredEvents.map((event) => (
+                <ActivityItem key={event.id} event={event} />
+              ))}
+            </div>
+          ) : hasEvents ? (
+            <div className="flex min-h-[min(40vh,280px)] flex-col items-center justify-center gap-2 py-10 text-center">
+              <p className="text-sm text-muted-foreground">No events in this category.</p>
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => setFilter('all')}>
+                Show all
+              </Button>
+            </div>
+          ) : (
+            <EmptyState />
+          )}
+        </PageScroll>
+      </PageWorkspace>
+    </PageShell>
   )
 }

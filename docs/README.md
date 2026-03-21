@@ -10,6 +10,7 @@
 | [architecture/remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md) | Remote ingest hub: Tailscale, HTTP `/health`, settings persistence, IPC |
 | [architecture/remote-discovery.md](./architecture/remote-discovery.md) | UDP multicast beacon for phone discovery (manual config remains first-class) |
 | [architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md) | **iOS implementer guide:** Tailscale, `/health`, UDP beacon, manual config, planned WSS/WebRTC |
+| [agents/gstack.md](./agents/gstack.md) | **gstack** skills: local **`.agents/`** (gitignored), clone + `./setup`, Windows/Git Bash, optional Cursor stubs |
 
 Start with **desktop** for end-to-end behaviour, then **core** / **db** for types and persistence.
 

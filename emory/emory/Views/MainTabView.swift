@@ -5,6 +5,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selectedTab = 0
+    @State private var hasOpenedGlassesTab = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -18,9 +19,13 @@ struct MainTabView: View {
             }
             .tag(0)
 
-            // Glasses tab (streaming dashboard)
+            // Glasses tab — only create StreamDashboardView once user visits this tab
             NavigationStack {
-                StreamDashboardView()
+                if hasOpenedGlassesTab {
+                    StreamDashboardView()
+                } else {
+                    Color.clear
+                }
             }
             .tabItem {
                 Image(systemName: "eye.fill")
@@ -48,6 +53,11 @@ struct MainTabView: View {
             .tag(3)
         }
         .tint(EmoryTheme.primary)
+        .onChange(of: selectedTab) { _, newTab in
+            if newTab == 1 {
+                hasOpenedGlassesTab = true
+            }
+        }
     }
 }
 

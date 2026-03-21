@@ -1,8 +1,8 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Person Detail View
-// Shows a person's photo, name, relationship, and memory notes.
-// Designed with large text and warm styling for dementia patients.
+// Shows a person's profile and recent memory context.
 
 struct PersonDetailView: View {
     let person: Person
@@ -21,21 +21,27 @@ struct PersonDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Large photo header
-                ZStack {
-                    Rectangle()
-                        .fill(EmoryTheme.primary.opacity(0.1))
-                        .frame(height: 260)
-
-                    FaceThumbnailView(
-                        faceThumbnail: resolvedPerson.faceThumbnail,
-                        fallbackSystemImage: resolvedPerson.photoName ?? "person.circle.fill",
-                        size: 132
-                    )
+                if let photoAsset = resolvedPerson.photoName,
+                   UIImage(named: photoAsset) != nil {
+                    Image(photoAsset)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 320)
+                        .clipped()
+                } else {
+                    ZStack {
+                        Rectangle()
+                            .fill(EmoryTheme.primary.opacity(0.08))
+                            .frame(height: 320)
+                        FaceThumbnailView(
+                            faceThumbnail: resolvedPerson.faceThumbnail,
+                            fallbackSystemImage: "person.circle.fill",
+                            size: 132
+                        )
+                    }
                 }
 
-                // Name and relationship
-                VStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(resolvedPerson.name)
                         .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
                         .foregroundStyle(EmoryTheme.textPrimary)
@@ -43,6 +49,8 @@ struct PersonDetailView: View {
                         .font(.system(size: settings.fontSize.bodySize))
                         .foregroundStyle(EmoryTheme.primary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
                 .padding(.top, 20)
                 .padding(.bottom, 24)
 
@@ -122,64 +130,60 @@ struct PersonDetailView: View {
                         Text(notes)
                             .font(.system(size: settings.fontSize.bodySize))
                             .foregroundStyle(EmoryTheme.textPrimary)
+                            .padding(.horizontal, 24)
                     }
                 }
 
-                // Action buttons
                 VStack(spacing: 12) {
-                    // Add Note
                     if settings.isMockMode {
                         Button {
                             showAddNote = true
                         } label: {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 18))
                                 Text("Add Note")
                                     .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
                             }
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding()
+                            .padding(.vertical, 14)
                             .background(EmoryTheme.secondary)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(Capsule())
                         }
                     }
 
-                    // Enroll Face
                     Button {
                         showEnrollConfirmation = true
                     } label: {
-                        HStack {
+                        HStack(spacing: 8) {
                             Image(systemName: "faceid")
+                                .font(.system(size: 18))
                             Text("Enroll Face")
                                 .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
                         }
-                        .foregroundStyle(EmoryTheme.primary)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(EmoryTheme.primary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(EmoryTheme.primary.opacity(0.3), lineWidth: 1)
-                        )
+                        .padding(.vertical, 14)
+                        .background(EmoryTheme.primary)
+                        .clipShape(Capsule())
                     }
 
-                    // Remove Person
                     if settings.isMockMode {
                         Button {
                             showRemoveConfirmation = true
                         } label: {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Image(systemName: "person.badge.minus")
+                                    .font(.system(size: 18))
                                 Text("Remove Person")
                                     .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
                             }
-                            .foregroundStyle(EmoryTheme.destructive)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(EmoryTheme.destructive.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .padding(.vertical, 14)
+                            .background(EmoryTheme.destructive.opacity(0.75))
+                            .clipShape(Capsule())
                         }
                     } else {
                         Text("This mobile view is currently read-only.")
@@ -188,13 +192,16 @@ struct PersonDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 40)
                 .padding(.bottom, 40)
             }
         }
         .background(EmoryTheme.background.ignoresSafeArea())
         .navigationTitle("About \(resolvedPerson.name)")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            InactivityManager.shared.setLastViewedPerson(person)
+        }
         .confirmationDialog(
             "Are you sure you want to remove \(resolvedPerson.name)?",
             isPresented: $showRemoveConfirmation,
@@ -219,7 +226,6 @@ struct PersonDetailView: View {
                 subtitle: $newNoteSubtitle,
                 fontSize: settings.fontSize
             ) {
-                // Note: In a real app, this would persist
                 newNoteTitle = ""
                 newNoteSubtitle = ""
                 showAddNote = false
@@ -328,8 +334,6 @@ struct PersonDetailView: View {
         }
     }
 }
-
-// MARK: - Add Note Sheet
 
 struct AddNoteSheet: View {
     @Binding var title: String

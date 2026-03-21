@@ -1,8 +1,8 @@
 import SwiftUI
+import UIKit
 
 // MARK: - People View
-// Grid of enrolled people shown as large photo cards.
-// Designed for easy recognition with big photos and names.
+// Registered people shown as large, easy-to-read cards.
 
 struct PeopleView: View {
     @State private var settings = AppSettings.shared
@@ -14,16 +14,10 @@ struct PeopleView: View {
     @State private var newPersonName = ""
     @State private var newPersonRelationship = ""
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
-    ]
-
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Header text
                     VStack(alignment: .leading, spacing: 4) {
                         Text("My Circle")
                             .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
@@ -35,7 +29,6 @@ struct PeopleView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
 
-                    // People grid
                     if peopleStore.isLoading && !settings.isMockMode {
                         ProgressView("Loading people...")
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -59,11 +52,12 @@ struct PeopleView: View {
                         .emoryCard()
                         .padding(.horizontal, 24)
                     } else {
-                        LazyVGrid(columns: columns, spacing: 20) {
+                        VStack(spacing: 14) {
                             ForEach(people) { person in
                                 NavigationLink(destination: PersonDetailView(person: person)) {
                                     PersonCardView(person: person, fontSize: settings.fontSize)
                                 }
+                                .buttonStyle(.plain)
                                 .contextMenu {
                                     if settings.isMockMode {
                                         Button(role: .destructive) {
@@ -79,6 +73,7 @@ struct PeopleView: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, 80)
                     }
+
                     Group {
                         if settings.isMockMode {
                             Text("Mock mode is on. Turn it off in Settings to load people from the desktop database.")
@@ -94,7 +89,6 @@ struct PeopleView: View {
             }
             .background(EmoryTheme.background.ignoresSafeArea())
 
-            // Floating add button
             if settings.isMockMode {
                 Button {
                     showAddPerson = true
@@ -156,23 +150,29 @@ struct PeopleView: View {
     }
 }
 
-// MARK: - Person Card
-
 struct PersonCardView: View {
     let person: Person
     let fontSize: EmoryTheme.FontSize
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Photo placeholder
-            FaceThumbnailView(
-                faceThumbnail: person.faceThumbnail,
-                fallbackSystemImage: person.photoName ?? "person.circle.fill",
-                size: 90
-            )
+        VStack(spacing: 10) {
+            if let photoAsset = person.photoName,
+               UIImage(named: photoAsset) != nil {
+                Image(photoAsset)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 110, height: 110)
+                    .clipShape(Circle())
+            } else {
+                FaceThumbnailView(
+                    faceThumbnail: person.faceThumbnail,
+                    fallbackSystemImage: "person.circle.fill",
+                    size: 110
+                )
+            }
 
             Text(person.name)
-                .font(.system(size: fontSize.bodySize, weight: .semibold))
+                .font(.system(size: fontSize.bodySize, weight: .bold))
                 .foregroundStyle(EmoryTheme.textPrimary)
 
             Text(person.relationship)
@@ -180,12 +180,10 @@ struct PersonCardView: View {
                 .foregroundStyle(EmoryTheme.primary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 24)
         .emoryCard()
     }
 }
-
-// MARK: - Add Person Sheet
 
 struct AddPersonSheet: View {
     @Binding var name: String

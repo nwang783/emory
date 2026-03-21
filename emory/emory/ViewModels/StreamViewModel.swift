@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Observation
+import QuartzCore
 
 // MARK: - Stream View Model
 // Drives all UI state for the dashboard. Subscribes to the
@@ -40,39 +41,66 @@ final class StreamViewModel {
     // Snapshot
     var lastSnapshot: UIImage?
 
+    // Bridge server
+    var bridgeStatus: BridgeServerService.ConnectionStatus = .disconnected
+    var recognizedFaces: [FaceMatch] = []
+    var lastTranscript: String?
+
     // MARK: - Private
 
-    private let service: MetaWearablesService
+    private var service: MetaWearablesService?
     private let micService = MicrophoneCaptureService()
+    let bridgeService = BridgeServerService()
     private var streamTasks: [Task<Void, Never>] = []
     private var fpsTimer: Timer?
     private var framesThisSecond: Int = 0
+    private var lastAudioLevelUpdate: Date = .distantPast
+    private var isStreaming: Bool = false
 
-    // MARK: - Init
+    // MARK: - Init (lightweight — no SDK or stream work)
 
-    init(service: MetaWearablesService? = nil) {
-        // Use real service for glasses, mock for testing
-        self.service = service ?? RealMetaWearablesService()
-        log("ViewModel initialized (real mode)")
-        subscribeToStreams()
+    init() {
+        log("ViewModel ready")
     }
 
     // MARK: - Actions
 
     func startSession() {
+        guard !isStreaming else { return }
+        isStreaming = true
         log("Starting session...")
-        let service = self.service
+
+        // Configure SDK on first use, not at app launch
+        emoryApp.configureSDKIfNeeded()
+
+        // Create service lazily — only when user taps Start
+        let svc = RealMetaWearablesService()
+        self.service = svc
+
+        // Forward mic audio to bridge server
+        micService.onAudioBuffer = { [weak self] buffer, sampleRate, channels in
+            self?.bridgeService.sendAudioChunk(buffer, sampleRate: sampleRate, channels: channels)
+        }
 
         // Reset counters
         frameCount = 0
         fps = 0
         framesThisSecond = 0
+
+        // Subscribe to streams FIRST so continuations are ready
+        subscribeToStreams(service: svc)
+        subscribeToBridge()
+        connectBridgeIfConfigured()
         startFPSTimer()
 
+        // Yield once to let the for-await loops start and register continuations
         let task = Task {
+            await Task.yield()
+
             do {
-                try await service.start()
-                log("Session started successfully")
+                try await svc.start()
+                self.log("Session started successfully")
+                self.bridgeService.sendSessionStart()
 
                 // Start iPhone mic capture alongside glasses video
                 do {
@@ -83,28 +111,37 @@ final class StreamViewModel {
                     self.log("Mic start failed: \(error.localizedDescription)", level: .error)
                 }
             } catch {
-                log("Failed to start session: \(error.localizedDescription)", level: .error)
+                self.log("Failed to start session: \(error.localizedDescription)", level: .error)
             }
         }
         streamTasks.append(task)
     }
 
     func stopSession() {
+        guard isStreaming else { return }
         log("Stopping session...")
-        let service = self.service
 
         // Stop mic capture
+        bridgeService.sendSessionEnd()
         micService.stop()
         isMicCapturing = false
         audioLevel = 0.0
         log("Microphone capture stopped")
 
+        let svc = self.service
         let task = Task {
-            await service.stop()
-            log("Session stopped")
+            await svc?.stop()
+            self.log("Session stopped")
         }
         streamTasks.append(task)
         stopFPSTimer()
+
+        // Cancel all stream subscriptions
+        cleanup()
+        isStreaming = false
+        sessionState = .idle
+        connectionState = .disconnected
+        currentFrame = nil
     }
 
     func startMicOnly() {
@@ -113,6 +150,21 @@ final class StreamViewModel {
         do {
             try micService.start()
             isMicCapturing = true
+
+            // Subscribe to mic level if not already
+            if streamTasks.isEmpty {
+                let micTask = Task {
+                    for await level in self.micService.audioLevelStream {
+                        let now = Date()
+                        if now.timeIntervalSince(self.lastAudioLevelUpdate) >= 0.1 {
+                            self.audioLevel = level
+                            self.lastAudioLevelUpdate = now
+                        }
+                    }
+                }
+                streamTasks.append(micTask)
+            }
+
             log("Mic-only mode active")
         } catch {
             log("Mic start failed: \(error.localizedDescription)", level: .error)
@@ -124,6 +176,9 @@ final class StreamViewModel {
         micService.stop()
         isMicCapturing = false
         audioLevel = 0.0
+        // Cancel mic task
+        streamTasks.forEach { $0.cancel() }
+        streamTasks.removeAll()
         log("Mic-only mode stopped")
     }
 
@@ -147,14 +202,16 @@ final class StreamViewModel {
         isPlayingRecording = true
         micService.playRecording()
 
-        // Poll for playback completion
-        Task {
-            while micService.isPlaying {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+        let task = Task {
+            while !Task.isCancelled && micService.isPlaying {
+                try? await Task.sleep(nanoseconds: 200_000_000)
             }
-            self.isPlayingRecording = false
-            self.log("Playback finished")
+            if !Task.isCancelled {
+                self.isPlayingRecording = false
+                self.log("Playback finished")
+            }
         }
+        streamTasks.append(task)
     }
 
     func stopPlayback() {
@@ -165,10 +222,10 @@ final class StreamViewModel {
 
     func captureSnapshot() {
         log("Capturing snapshot...")
-        let service = self.service
+        let svc = self.service
 
         Task {
-            if let image = await service.captureSnapshot() {
+            if let image = await svc?.captureSnapshot() {
                 self.lastSnapshot = image
                 log("Snapshot captured (\(Int(image.size.width))x\(Int(image.size.height)))")
             } else {
@@ -177,11 +234,9 @@ final class StreamViewModel {
         }
     }
 
-    // MARK: - Stream Subscriptions
+    // MARK: - Stream Subscriptions (only called when session starts)
 
-    private func subscribeToStreams() {
-        let service = self.service
-
+    private func subscribeToStreams(service: MetaWearablesService) {
         // Connection state
         let connTask = Task {
             for await state in service.connectionStateStream {
@@ -198,7 +253,7 @@ final class StreamViewModel {
             }
         }
 
-        // Video frames
+        // Video frames — direct assignment, no detached tasks
         let frameTask = Task {
             for await frame in service.videoFrameStream {
                 self.currentFrame = frame
@@ -206,6 +261,11 @@ final class StreamViewModel {
                 self.framesThisSecond += 1
                 self.lastFrameTime = Date()
                 self.resolution = "\(Int(frame.size.width))x\(Int(frame.size.height))"
+
+                // Send to bridge inline — only if connected
+                if self.bridgeService.connectionStatus == .connected {
+                    self.bridgeService.sendVideoFrame(frame, timestamp: Date())
+                }
             }
         }
 
@@ -217,10 +277,14 @@ final class StreamViewModel {
             }
         }
 
-        // Mic audio level
+        // Mic audio level — throttled
         let micTask = Task {
             for await level in self.micService.audioLevelStream {
-                self.audioLevel = level
+                let now = Date()
+                if now.timeIntervalSince(self.lastAudioLevelUpdate) >= 0.1 {
+                    self.audioLevel = level
+                    self.lastAudioLevelUpdate = now
+                }
             }
         }
 
@@ -230,6 +294,7 @@ final class StreamViewModel {
     // MARK: - FPS Tracking
 
     private func startFPSTimer() {
+        stopFPSTimer()
         fpsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -248,17 +313,69 @@ final class StreamViewModel {
 
     func log(_ message: String, level: DebugEvent.Level = .info) {
         let event = DebugEvent(message, level: level)
-        debugEvents.insert(event, at: 0)
+        debugEvents.append(event)
 
-        // Keep last 200 events to avoid unbounded growth
-        if debugEvents.count > 200 {
-            debugEvents = Array(debugEvents.prefix(200))
+        if debugEvents.count > 100 {
+            debugEvents.removeFirst(debugEvents.count - 100)
         }
+    }
+
+    // MARK: - Bridge Server
+
+    func connectBridge(url: String) {
+        log("Connecting to bridge: \(url)")
+        bridgeService.connect(to: url)
+        bridgeStatus = bridgeService.connectionStatus
+    }
+
+    func disconnectBridge() {
+        bridgeService.disconnect()
+        bridgeStatus = .disconnected
+        log("Bridge disconnected")
+    }
+
+    private func connectBridgeIfConfigured() {
+        let url = AppSettings.shared.backendURL
+        if !url.isEmpty && url.hasPrefix("ws://") {
+            connectBridge(url: url)
+        }
+    }
+
+    private func subscribeToBridge() {
+        let faceTask = Task {
+            for await result in self.bridgeService.faceResultStream {
+                self.recognizedFaces = result.matches
+                if !result.matches.isEmpty {
+                    let names = result.matches.map { $0.name }.joined(separator: ", ")
+                    self.log("Recognized: \(names) (\(result.ms)ms)")
+                }
+            }
+        }
+
+        let transcriptTask = Task {
+            for await transcript in self.bridgeService.transcriptStream {
+                self.lastTranscript = transcript.text
+                self.log("Transcript: \(transcript.text.prefix(60))...")
+            }
+        }
+
+        let statusTask = Task {
+            for await status in self.bridgeService.statusStream {
+                self.log("Bridge: face=\(status.faceReady), people=\(status.peopleCount)")
+            }
+        }
+
+        streamTasks.append(contentsOf: [faceTask, transcriptTask, statusTask])
     }
 
     func cleanup() {
         streamTasks.forEach { $0.cancel() }
+        streamTasks.removeAll()
         fpsTimer?.invalidate()
+        fpsTimer = nil
         micService.stop()
+        bridgeService.disconnect()
+        service = nil
+        isStreaming = false
     }
 }
