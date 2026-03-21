@@ -21,7 +21,7 @@ struct emoryApp: App {
 
     var body: some Scene {
         WindowGroup {
-            StreamDashboardView()
+            MainTabView()
                 .onOpenURL { url in
                     Task {
                         try? await Wearables.shared.handleUrl(url)
