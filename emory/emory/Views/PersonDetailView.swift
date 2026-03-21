@@ -148,6 +148,9 @@ struct PersonDetailView: View {
         .background(EmoryTheme.background.ignoresSafeArea())
         .navigationTitle("About \(person.name)")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            InactivityManager.shared.setLastViewedPerson(person)
+        }
         .confirmationDialog(
             "Are you sure you want to remove \(person.name)?",
             isPresented: $showRemoveConfirmation,

@@ -96,12 +96,12 @@ final class BridgeServerService {
     func sendVideoFrame(_ image: UIImage, timestamp: Date) {
         guard connectionStatus == .connected else { return }
 
-        // Sample frames
+        // Sample frames — only send every Nth frame
         frameCounter += 1
         guard frameCounter % frameSampleInterval == 0 else { return }
 
-        // Compress to JPEG
-        guard let jpegData = image.jpegData(compressionQuality: 0.5) else { return }
+        // Compress to JPEG (lower quality = less CPU + memory)
+        guard let jpegData = image.jpegData(compressionQuality: 0.3) else { return }
 
         // Build binary message
         let meta: [String: Any] = [
@@ -113,18 +113,13 @@ final class BridgeServerService {
 
         var data = Data(capacity: 8 + metaJSON.count + jpegData.count)
 
-        // Message type: 1 = video_frame
         var messageType: UInt32 = 1
         data.append(Data(bytes: &messageType, count: 4))
 
-        // Metadata length
         var metaLength = UInt32(metaJSON.count)
         data.append(Data(bytes: &metaLength, count: 4))
 
-        // Metadata JSON
         data.append(metaJSON)
-
-        // JPEG payload
         data.append(jpegData)
 
         webSocketTask?.send(.data(data)) { [weak self] error in
@@ -145,7 +140,6 @@ final class BridgeServerService {
 
         let frameCount = Int(buffer.frameLength)
 
-        // Convert float32 to int16 PCM
         var pcmData = Data(capacity: frameCount * 2)
         for i in 0..<frameCount {
             let sample = channelData[0][i]
@@ -154,7 +148,6 @@ final class BridgeServerService {
             pcmData.append(Data(bytes: &int16Sample, count: 2))
         }
 
-        // Build binary message
         let meta: [String: Any] = [
             "ts": Date().timeIntervalSince1970,
             "dur": frameCount,
@@ -165,7 +158,6 @@ final class BridgeServerService {
 
         var data = Data(capacity: 8 + metaJSON.count + pcmData.count)
 
-        // Message type: 2 = audio_chunk
         var messageType: UInt32 = 2
         data.append(Data(bytes: &messageType, count: 4))
 
@@ -284,21 +276,37 @@ final class BridgeServerService {
 
     // MARK: - Health Check
 
-    func checkHealth(url: String) async -> ServerStatusMessage? {
+    func checkHealth(url: String) async -> HealthResponse? {
         // Convert ws:// to http:// for health check
         let httpURL = url
             .replacingOccurrences(of: "ws://", with: "http://")
             .replacingOccurrences(of: "wss://", with: "https://")
         let healthURL = httpURL.hasSuffix("/") ? httpURL + "health" : httpURL + "/health"
 
-        guard let url = URL(string: healthURL) else { return nil }
+        guard let healthEndpoint = URL(string: healthURL) else { return nil }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            return try JSONDecoder().decode(ServerStatusMessage.self, from: data)
+            var request = URLRequest(url: healthEndpoint)
+            request.timeoutInterval = 5
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(HealthResponse.self, from: data)
         } catch {
             print("[Bridge] Health check failed: \(error.localizedDescription)")
             return nil
         }
     }
+}
+
+// MARK: - Health Response (matches teammate's remote-ingest format)
+struct HealthResponse: Codable {
+    let ok: Bool
+    let service: String
+    let protoVersion: Int
+    let instanceId: String
+    let friendlyName: String
+    let signalingPort: Int
+    // Bridge-specific extras (optional)
+    let faceReady: Bool?
+    let peopleCount: Int?
+    let wsReady: Bool?
 }

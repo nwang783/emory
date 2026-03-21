@@ -13,7 +13,8 @@ import type { StatusMessage } from './protocol.js'
 // Lightweight WebSocket server that receives video frames + audio from the iOS app,
 // runs face recognition and conversation processing, and sends results back.
 
-const PORT = parseInt(process.env.PORT || '8385', 10)
+// Match teammate's remote ingest port (18763) by default
+const PORT = parseInt(process.env.PORT || '18763', 10)
 const MODELS_DIR = process.env.MODELS_DIR || path.join(process.cwd(), 'models')
 
 async function main(): Promise<void> {
@@ -49,37 +50,119 @@ async function main(): Promise<void> {
   // Create HTTP server
   const server = createServer((req, res) => {
     // Health check endpoint
-    if (req.url === '/health') {
-      const status: StatusMessage = {
-        type: 'status',
-        ready: true,
+    if (req.url?.split('?')[0] === '/health') {
+      // Match teammate's remote-ingest health format + add bridge extras
+      const body = JSON.stringify({
+        ok: true,
+        service: 'emory-ingest',
+        protoVersion: 1,
+        instanceId: 'bridge-server',
+        friendlyName: 'Emory Bridge Server',
+        signalingPort: PORT,
+        // Bridge-specific extras
         faceReady,
         peopleCount: peopleRepo.getAll().length,
-      }
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(status))
+        wsReady: true,
+      })
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      })
+      res.end(body)
       return
     }
 
-    res.writeHead(404)
-    res.end('Not found')
+    if (req.url?.split('?')[0] === '/') {
+      // Simple frame viewer — open in browser to see incoming frames
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(`<!DOCTYPE html>
+<html><head><title>Emory Bridge</title>
+<style>
+  body { background: #111; color: #eee; font-family: system-ui; margin: 0; padding: 20px; }
+  h1 { color: #4A90D9; font-size: 24px; }
+  #status { color: #7BAE7F; margin: 10px 0; }
+  #frame { max-width: 100%; border-radius: 12px; background: #222; }
+  #info { font-family: monospace; font-size: 13px; color: #999; margin: 8px 0; }
+  #matches { color: #7BAE7F; font-size: 18px; font-weight: bold; margin: 8px 0; }
+</style>
+</head><body>
+<h1>Emory Bridge Server</h1>
+<div id="status">Waiting for iOS connection...</div>
+<div id="matches"></div>
+<canvas id="frame" width="720" height="1280"></canvas>
+<div id="info"></div>
+<script>
+const ws = new WebSocket('ws://' + location.host);
+const canvas = document.getElementById('frame');
+const ctx = canvas.getContext('2d');
+let frameCount = 0;
+
+ws.onopen = () => { document.getElementById('status').textContent = 'Connected — waiting for frames...'; };
+ws.onclose = () => { document.getElementById('status').textContent = 'Disconnected'; };
+
+ws.onmessage = (e) => {
+  if (typeof e.data === 'string') {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'face_result' && msg.matches?.length > 0) {
+        document.getElementById('matches').textContent =
+          msg.matches.map(m => m.name + ' (' + Math.round(m.similarity * 100) + '%)').join(', ');
+      }
+      if (msg.type === 'viewer_frame') {
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          frameCount++;
+          document.getElementById('info').textContent = 'Frame #' + frameCount + ' — ' + img.width + 'x' + img.height;
+          document.getElementById('status').textContent = 'Receiving frames';
+        };
+        img.src = 'data:image/jpeg;base64,' + msg.jpeg;
+      }
+    } catch {}
+  }
+};
+</script>
+</body></html>`)
+      return
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('Not found\n')
   })
 
   // Create WebSocket server
   const wss = new WebSocketServer({ server })
 
-  wss.on('connection', (ws) => {
-    console.log('[Bridge] iOS client connected!')
+  // Track browser viewer clients
+  const viewerClients = new Set<import('ws').WebSocket>()
+
+  wss.on('connection', (ws, req) => {
+    // Browser clients connect with no binary messages — treat as viewers
+    const isViewer = req.headers['sec-websocket-protocol'] === undefined
+
+    // Track all connections; we'll figure out iOS vs viewer by message type
+    let identifiedAsIOS = false
 
     // Create processors for this connection
     const frameProcessor = new FrameProcessor(peopleRepo, (result) => {
-      handler.send({
+      const msg = {
         type: 'face_result',
         ts: result.timestamp,
         matches: result.matches,
         unknowns: result.unknowns,
         ms: Math.round(result.processingMs),
-      })
+      }
+      handler.send(msg)
+
+      // Broadcast face results to browser viewers too
+      const msgStr = JSON.stringify(msg)
+      for (const viewer of viewerClients) {
+        if (viewer.readyState === viewer.OPEN) {
+          viewer.send(msgStr)
+        }
+      }
 
       if (result.matches.length > 0) {
         const names = result.matches.map((m) => m.name).join(', ')
@@ -106,6 +189,37 @@ async function main(): Promise<void> {
     // audioProcessor.setMemoryExtractor(...)
 
     const handler = new WsHandler(ws, frameProcessor, audioProcessor)
+
+    // Forward frames to browser viewers (throttled to ~2fps to save bandwidth)
+    let lastViewerFrameTime = 0
+    handler.onFrame = (jpeg) => {
+      identifiedAsIOS = true
+      const now = Date.now()
+      if (now - lastViewerFrameTime < 500) return // Max 2fps to viewers
+      lastViewerFrameTime = now
+
+      const viewerMsg = JSON.stringify({
+        type: 'viewer_frame',
+        jpeg: jpeg.toString('base64'),
+      })
+      for (const viewer of viewerClients) {
+        if (viewer.readyState === viewer.OPEN) {
+          viewer.send(viewerMsg)
+        }
+      }
+    }
+
+    ws.on('close', () => {
+      viewerClients.delete(ws)
+    })
+
+    // If no binary messages received within 2 seconds, treat as viewer
+    setTimeout(() => {
+      if (!identifiedAsIOS) {
+        viewerClients.add(ws)
+        console.log(`[Bridge] Browser viewer connected (${viewerClients.size} viewers)`)
+      }
+    }, 2000)
 
     // Send initial status
     handler.send({

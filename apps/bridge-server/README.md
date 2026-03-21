@@ -32,7 +32,7 @@ If you're on eduroam or a network that blocks local connections, use Tailscale:
 1. Install Tailscale on both the laptop and iPhone
 2. Run `tailscale ip -4` on the laptop to get your Tailscale IP (e.g. `100.x.y.z`)
 3. Start the bridge server: `bun run dev`
-4. In the iOS app Settings, enter: `ws://100.x.y.z:8385`
+4. In the iOS app Settings, enter: `ws://100.x.y.z:18763`
 
 That's it — Tailscale creates a direct tunnel that bypasses eduroam restrictions.
 
@@ -40,12 +40,12 @@ That's it — Tailscale creates a direct tunnel that bypasses eduroam restrictio
 
 | Endpoint | Purpose |
 |----------|---------|
-| `ws://host:8385` | WebSocket — iOS connects here |
-| `http://host:8385/health` | Health check — verify server is running |
+| `ws://host:18763` | WebSocket — iOS connects here |
+| `http://host:18763/health` | Health check — verify server is running |
 
 ## Port
 
-Default port is `8385`. Override with:
+Default port is `18763`. Override with:
 
 ```bash
 PORT=9000 bun run dev

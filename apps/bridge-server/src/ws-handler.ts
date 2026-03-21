@@ -18,6 +18,7 @@ export class WsHandler {
   private ws: WebSocket
   private frameProcessor: FrameProcessor
   private audioProcessor: AudioProcessor
+  onFrame: ((jpeg: Buffer) => void) | null = null
 
   constructor(ws: WebSocket, frameProcessor: FrameProcessor, audioProcessor: AudioProcessor) {
     this.ws = ws
@@ -65,6 +66,10 @@ export class WsHandler {
           meta.h || 1280,
           meta.ts || Date.now() / 1000,
         )
+        // Forward JPEG to browser viewers
+        if (this.onFrame) {
+          this.onFrame(parsed.payload)
+        }
         break
       }
 

@@ -138,50 +138,52 @@ final class RealMetaWearablesService: MetaWearablesService {
         self.streamSession = session
 
         // Subscribe to session state changes
-        let sessionCont = self.sessionContinuation
-        let stateToken = session.statePublisher.listen { state in
+        // Use [weak self] and access continuations at call time, not capture time,
+        // because lazy var streams may not have been accessed yet when start() runs.
+        let stateToken = session.statePublisher.listen { [weak self] state in
             print("[DAT] Session state: \(state)")
             Task { @MainActor in
+                guard let self = self else { return }
                 switch state {
-                case .stopped:      sessionCont?.yield(.idle)
-                case .waitingForDevice, .starting: sessionCont?.yield(.starting)
-                case .streaming:    sessionCont?.yield(.streaming)
-                case .paused:       sessionCont?.yield(.paused)
-                case .stopping:     sessionCont?.yield(.stopping)
-                @unknown default:   sessionCont?.yield(.idle)
+                case .stopped:      self.sessionContinuation?.yield(.idle)
+                case .waitingForDevice, .starting: self.sessionContinuation?.yield(.starting)
+                case .streaming:    self.sessionContinuation?.yield(.streaming)
+                case .paused:       self.sessionContinuation?.yield(.paused)
+                case .stopping:     self.sessionContinuation?.yield(.stopping)
+                @unknown default:   self.sessionContinuation?.yield(.idle)
                 }
             }
         }
         listenerTokens.append(stateToken)
 
         // Subscribe to video frames
-        let frameCont = self.frameContinuation
         let frameToken = session.videoFramePublisher.listen { [weak self] frame in
             if let image = frame.makeUIImage() {
                 print("[DAT] Got frame: \(Int(image.size.width))x\(Int(image.size.height))")
-                frameCont?.yield(image)
                 Task { @MainActor in
-                    self?.updateCurrentFrame(image)
+                    guard let self = self else { return }
+                    self.frameContinuation?.yield(image)
+                    self.updateCurrentFrame(image)
                 }
             }
         }
         listenerTokens.append(frameToken)
 
         // Subscribe to errors
-        let connCont = self.connectionContinuation
-        let errorToken = session.errorPublisher.listen { error in
+        let errorToken = session.errorPublisher.listen { [weak self] error in
             print("[DAT] Stream ERROR: \(error)")
             Task { @MainActor in
+                guard let self = self else { return }
                 switch error {
                 case .deviceNotFound, .deviceNotConnected:
-                    connCont?.yield(.disconnected)
-                    sessionCont?.yield(.error)
+                    self.connectionContinuation?.yield(.disconnected)
+                    self.sessionContinuation?.yield(.error)
                 case .permissionDenied:
-                    sessionCont?.yield(.error)
+                    self.sessionContinuation?.yield(.error)
                 case .hingesClosed, .thermalCritical:
-                    sessionCont?.yield(.paused)
+                    self.sessionContinuation?.yield(.paused)
                 default:
-                    sessionCont?.yield(.error)
+                    self.sessionContinuation?.yield(.error)
                 }
             }
         }
