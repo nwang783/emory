@@ -21,12 +21,22 @@ import {
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { useSettingsStore } from '@/shared/stores/settings.store'
+import { usePeopleStore } from '@/shared/stores/people.store'
+import {
+  buildGraphEdgesToSelf,
+  formatGraphEdgeLabel,
+  type GraphEdgeToSelf,
+  type RelationshipEndpointRow,
+} from '@/shared/lib/graph-relationship-labels'
 import { reachablePersonIdsFrom } from '../lib/ego-subgraph'
+import { RELATIONSHIP_TYPES, TYPE_COLOURS } from '../lib/graph-constants'
+import { GraphNodeEditDialog } from './GraphNodeEditDialog'
 
 type PersonNode = {
   id: string
   name: string
-  relationship: string | null
+  /** Edge to designated self — drives colour and subtitle (not `people.relationship`). */
+  graphEdgeToSelf: GraphEdgeToSelf | null
   isSelf: boolean
   x: number
   y: number
@@ -45,23 +55,6 @@ type RelationshipEdge = {
   notes: string | null
 }
 
-const TYPE_COLOURS: Record<string, string> = {
-  spouse: '#f43f5e',
-  child: '#fb923c',
-  parent: '#a78bfa',
-  sibling: '#34d399',
-  friend: '#60a5fa',
-  carer: '#fbbf24',
-  neighbour: '#94a3b8',
-  colleague: '#818cf8',
-  other: '#6b7280',
-}
-
-const RELATIONSHIP_TYPES = [
-  'spouse', 'child', 'parent', 'sibling', 'friend',
-  'carer', 'neighbour', 'colleague', 'other',
-] as const
-
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -71,15 +64,10 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-function getCategoryColour(relationship: string | null): string {
-  if (!relationship) return '#6b7280'
-  const lower = relationship.toLowerCase()
-  if (['wife', 'husband', 'spouse', 'partner'].some((r) => lower.includes(r))) return '#f43f5e'
-  if (['son', 'daughter', 'child', 'parent', 'mother', 'father', 'mum', 'dad'].some((r) => lower.includes(r))) return '#fb923c'
-  if (['brother', 'sister', 'sibling'].some((r) => lower.includes(r))) return '#34d399'
-  if (['friend'].some((r) => lower.includes(r))) return '#60a5fa'
-  if (['carer', 'nurse', 'doctor'].some((r) => lower.includes(r))) return '#fbbf24'
-  return '#94a3b8'
+function nodeColour(edge: GraphEdgeToSelf | null, isSelf: boolean): string {
+  if (isSelf) return '#94a3b8'
+  if (!edge) return '#6b7280'
+  return TYPE_COLOURS[edge.relationshipType] ?? '#6b7280'
 }
 
 export function ConnectionsGraph(): React.JSX.Element {
@@ -105,6 +93,11 @@ export function ConnectionsGraph(): React.JSX.Element {
   const [selfPersonId, setSelfPersonId] = useState<string | null>(null)
   const [needsSelfSetup, setNeedsSelfSetup] = useState(false)
   const [hasPeopleInDirectory, setHasPeopleInDirectory] = useState(false)
+  const [editTarget, setEditTarget] = useState<{
+    personId: string
+    name: string
+    isSelf: boolean
+  } | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -114,7 +107,7 @@ export function ConnectionsGraph(): React.JSX.Element {
         window.emoryApi.db.people.getSelf(),
       ])
 
-      const ppl = peopleData as Array<{ id: string; name: string; relationship: string | null }>
+      const ppl = peopleData as Array<{ id: string; name: string }>
       const rels = relData as Array<{
         id: string; personAId: string; personBId: string
         relationshipType: string; personAName: string; personBName: string; notes: string | null
@@ -148,6 +141,8 @@ export function ConnectionsGraph(): React.JSX.Element {
       setNeedsSelfSetup(false)
       setSelfPersonId(self.id)
 
+      const edgeToSelf = buildGraphEdgesToSelf(self, rels as RelationshipEndpointRow[])
+
       const visibleIds = reachablePersonIdsFrom(
         self.id,
         rels.map((r) => ({ personAId: r.personAId, personBId: r.personBId })),
@@ -175,11 +170,12 @@ export function ConnectionsGraph(): React.JSX.Element {
       const nodes: PersonNode[] = visiblePpl.map((p) => {
         const prev = existingPositions.get(p.id)
         const isSelfNode = p.id === self.id
+        const graphEdgeToSelf = isSelfNode ? null : (edgeToSelf[p.id] ?? null)
         if (prev) {
           return {
             id: p.id,
             name: p.name,
-            relationship: p.relationship,
+            graphEdgeToSelf,
             isSelf: isSelfNode,
             x: prev.x,
             y: prev.y,
@@ -192,7 +188,7 @@ export function ConnectionsGraph(): React.JSX.Element {
           return {
             id: p.id,
             name: p.name,
-            relationship: p.relationship,
+            graphEdgeToSelf: null,
             isSelf: true,
             x: cx,
             y: cy,
@@ -207,7 +203,7 @@ export function ConnectionsGraph(): React.JSX.Element {
         return {
           id: p.id,
           name: p.name,
-          relationship: p.relationship,
+          graphEdgeToSelf,
           isSelf: false,
           x: cx + Math.cos(angle) * ring,
           y: cy + Math.sin(angle) * ring,
@@ -376,7 +372,7 @@ export function ConnectionsGraph(): React.JSX.Element {
 
       const baseRadius = 20 + Math.min(node.connectionCount * 4, 16)
       const radius = isHovered ? baseRadius + 3 : baseRadius
-      const colour = getCategoryColour(node.relationship)
+      const colour = nodeColour(node.graphEdgeToSelf, node.isSelf)
 
       ctx.globalAlpha = dimmed ? 0.15 : 1
 
@@ -416,9 +412,9 @@ export function ConnectionsGraph(): React.JSX.Element {
         ctx.fillText('You', node.x, node.y + radius + subline)
         subline += 12
       }
-      if (node.relationship) {
+      if (node.graphEdgeToSelf) {
         ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.5)'
-        ctx.fillText(node.relationship, node.x, node.y + radius + subline)
+        ctx.fillText(formatGraphEdgeLabel(node.graphEdgeToSelf), node.x, node.y + radius + subline)
       }
     }
 
@@ -521,6 +517,7 @@ export function ConnectionsGraph(): React.JSX.Element {
         type: 'friend',
         notes: '',
       })
+      await usePeopleStore.getState().loadPeople()
       await loadData()
     } catch (err) {
       toast.error('Failed to add relationship', {
@@ -581,7 +578,8 @@ export function ConnectionsGraph(): React.JSX.Element {
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Connections</h2>
           <p className="text-xs text-muted-foreground">
-            {nodeCount} in your network, {edgeCount} {edgeCount === 1 ? 'connection' : 'connections'}
+            {nodeCount} in your network, {edgeCount} {edgeCount === 1 ? 'connection' : 'connections'}. Double-click a
+            person to edit.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -609,6 +607,11 @@ export function ConnectionsGraph(): React.JSX.Element {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
+          onDoubleClick={(e) => {
+            const node = findNodeAt(e.clientX, e.clientY)
+            if (!node) return
+            setEditTarget({ personId: node.id, name: node.name, isSelf: node.isSelf })
+          }}
         />
       </div>
 
@@ -671,6 +674,17 @@ export function ConnectionsGraph(): React.JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <GraphNodeEditDialog
+        personId={editTarget?.personId ?? null}
+        personName={editTarget?.name ?? ''}
+        isSelf={editTarget?.isSelf ?? false}
+        open={editTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setEditTarget(null)
+        }}
+        onGraphChanged={loadData}
+      />
     </section>
   )
 }

@@ -3,6 +3,7 @@
 | Doc | Scope |
 |-----|--------|
 | [apps/desktop.md](./apps/desktop.md) | Electron app: 7-tab layout, IPC, preload, stores, UI components |
+| [apps/connections-graph.md](./apps/connections-graph.md) | Connections graph: edit flows, cascade to memories, where types live |
 | [packages/core.md](./packages/core.md) | Face engine, quality, liveness, appearance, grading services |
 | [packages/db.md](./packages/db.md) | SQLite adapter, repositories, schema through v6 (indexes, conversations), retention |
 | [architecture/cloud-sync.md](./architecture/cloud-sync.md) | Cloud sync protocol design and migration path |

@@ -39,6 +39,7 @@ type PersonMemory = {
   id: string
   personId: string
   recordingId: string | null
+  relationshipId?: string | null
   memoryText: string
   memoryType: MemoryType
   memoryDate: string

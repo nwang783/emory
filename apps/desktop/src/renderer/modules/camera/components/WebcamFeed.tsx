@@ -114,7 +114,12 @@ export function WebcamFeed(): React.JSX.Element {
   const [autoLearnCount, setAutoLearnCount] = useState(0)
   const [showMemoryQueryPanel, setShowMemoryQueryPanel] = useState(false)
   const [identifiedPeople, setIdentifiedPeople] = useState<
-    Array<{ label: string; personId: string; similarity: number; relationship?: string | null }>
+    Array<{
+      label: string
+      personId: string
+      similarity: number
+      graphRelationshipTypeToSelf?: string | null
+    }>
   >([])
   const urgentIdentifyRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
@@ -276,16 +281,16 @@ export function WebcamFeed(): React.JSX.Element {
           }
         }
       }
-      const peopleState = usePeopleStore.getState().people
+      const { graphEdgeToSelfByPersonId } = usePeopleStore.getState()
       const identified = tracksRef.current
         .filter((t) => t.identity)
         .map((t) => {
-          const person = peopleState.find((p) => p.id === t.identity!.personId)
+          const edge = graphEdgeToSelfByPersonId[t.identity!.personId]
           return {
             label: t.identity!.label,
             personId: t.identity!.personId,
             similarity: t.identity!.similarity,
-            relationship: person?.relationship ?? null,
+            graphRelationshipTypeToSelf: edge?.relationshipType ?? null,
           }
         })
       setIdentifiedPeople(identified)

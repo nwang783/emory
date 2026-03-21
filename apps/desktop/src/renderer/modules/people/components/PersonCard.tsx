@@ -3,6 +3,7 @@ import { Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Person } from '@/shared/stores/people.store'
 import { usePeopleStore } from '@/shared/stores/people.store'
+import { formatGraphEdgeLabel } from '@/shared/lib/graph-relationship-labels'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,6 +49,7 @@ export function PersonCard({ person, onEdit }: PersonCardProps): React.JSX.Eleme
   const [embeddingCount, setEmbeddingCount] = useState<number | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const removePerson = usePeopleStore((s) => s.removePerson)
+  const graphEdgeToSelf = usePeopleStore((s) => s.graphEdgeToSelfByPersonId[person.id])
 
   useEffect(() => {
     window.emoryApi.face.getEmbeddingCount(person.id).then(setEmbeddingCount).catch(() => {})
@@ -76,9 +78,9 @@ export function PersonCard({ person, onEdit }: PersonCardProps): React.JSX.Eleme
                 You
               </Badge>
             )}
-            {person.relationship && (
+            {graphEdgeToSelf && (
               <Badge variant="secondary" className="text-[10px]">
-                {person.relationship}
+                {formatGraphEdgeLabel(graphEdgeToSelf)}
               </Badge>
             )}
             {embeddingCount !== null && embeddingCount > 0 && (

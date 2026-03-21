@@ -3,6 +3,7 @@ import type {
   ConversationRepository,
   PersonMemory,
   PeopleRepository,
+  RelationshipRepository,
 } from '@emory/db'
 import { DeepgramService } from './deepgram.service.js'
 import { MemoryExtractionService } from './memory-extraction.service.js'
@@ -41,10 +42,23 @@ function summarizeMemory(memory: {
   }
 }
 
+function relationshipContextFromGraph(
+  relationshipRepo: RelationshipRepository,
+  selfId: string | undefined,
+  targetPersonId: string,
+): string | null {
+  if (!selfId) return null
+  const rel = relationshipRepo.findBetween(selfId, targetPersonId)
+  if (!rel) return null
+  const n = rel.notes?.trim()
+  return n ? `${rel.relationshipType} (${n})` : rel.relationshipType
+}
+
 export class ConversationProcessingService {
   constructor(
     private conversationRepo: ConversationRepository,
     private peopleRepo: PeopleRepository,
+    private relationshipRepo: RelationshipRepository,
     private deepgramService: DeepgramService,
     private memoryExtractionService: MemoryExtractionService,
   ) {}
@@ -143,7 +157,11 @@ export class ConversationProcessingService {
         targetPerson: {
           id: targetPerson.id,
           name: targetPerson.name,
-          relationship: targetPerson.relationship,
+          relationship: relationshipContextFromGraph(
+            this.relationshipRepo,
+            selfPerson?.id,
+            targetPerson.id,
+          ),
         },
         recordedAt: input.recordedAt,
       })

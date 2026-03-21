@@ -16,6 +16,13 @@ export type MemoryAnswerResult = {
   confidence: 'high' | 'medium' | 'low'
 }
 
+export type MatchedGraphRelationship = {
+  otherPersonId: string
+  otherPersonName: string
+  relationshipType: string
+  notes: string | null
+}
+
 type BuildAnswerInput = {
   askedAt: string
   queryText: string
@@ -24,6 +31,8 @@ type BuildAnswerInput = {
   matchedPeople: Person[]
   matchedMemories: PersonMemory[]
   matchedRecordings: ConversationRecording[]
+  /** Direct edges between the wearer (`selfPerson`) and each named person — authoritative for Connections graph. */
+  matchedGraphRelationships: MatchedGraphRelationship[]
 }
 
 const MEMORY_ANSWER_SCHEMA = {
@@ -109,6 +118,7 @@ export class MemoryAnswerService {
               'You answer spoken memory questions for a local-first dementia assistant.',
               'Use only the evidence provided in the user message.',
               'Do not invent facts that are not present in the matched people, memories, or recordings.',
+              'If matchedGraphRelationships is non-empty, it lists how the wearer is linked to someone in the Connections graph (relationshipType such as friend, parent, child). Prefer that for questions about relationship to me or how someone relates to the wearer.',
               'If evidence is weak or missing, say that clearly.',
               'Keep the answer short and easy to speak aloud, usually 1 to 3 sentences.',
             ].join(' '),

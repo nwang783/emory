@@ -135,7 +135,8 @@ app.whenReady().then(async () => {
     return { success: false as const, error: err }
   })
 
-  const { peopleRepo, encounterRepo, unknownRepo, retentionRepo, conversationRepo } = registerDbIpc()
+  const { peopleRepo, encounterRepo, unknownRepo, retentionRepo, conversationRepo, relationshipRepo } =
+    registerDbIpc()
 
   const cleanupService = new CleanupService(retentionRepo, encounterRepo, unknownRepo)
   cleanupService.start()
@@ -147,12 +148,14 @@ app.whenReady().then(async () => {
   const conversationProcessingService = new ConversationProcessingService(
     conversationRepo,
     peopleRepo,
+    relationshipRepo,
     deepgramService,
     memoryExtractionService,
   )
   const memoryQueryService = new MemoryQueryService(
     conversationRepo,
     peopleRepo,
+    relationshipRepo,
     deepgramService,
     memoryQueryUnderstandingService,
     memoryAnswerService,
