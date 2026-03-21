@@ -2,21 +2,20 @@ import SwiftUI
 
 // MARK: - Home View
 // Large, friendly welcome screen for dementia patients.
-// Two oversized card buttons for People and Settings.
+// Two oversized card buttons for People and Memories.
 
 struct HomeView: View {
     @State private var settings = AppSettings.shared
+    @State private var connectionStore = DesktopConnectionStore.shared
 
-    // Entry animation states
     @State private var showHeader = false
     @State private var showWelcome = false
     @State private var showAccentLine = false
     @State private var showPeopleCard = false
-    @State private var showSettingsCard = false
+    @State private var showMemoriesCard = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text("Emory")
                     .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
@@ -24,12 +23,11 @@ struct HomeView: View {
 
                 Spacer()
 
-                // Connection badge
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(Color.gray)
+                        .fill(connectionStore.isConnected ? EmoryTheme.secondary : Color.gray)
                         .frame(width: 8, height: 8)
-                    Text("Disconnected")
+                    Text(connectionStore.friendlyName ?? connectionStore.statusText)
                         .font(.system(size: settings.fontSize.captionSize))
                         .foregroundStyle(EmoryTheme.textSecondary)
                 }
@@ -45,7 +43,6 @@ struct HomeView: View {
 
             Spacer()
 
-            // Welcome text
             VStack(spacing: 8) {
                 Text("Hello! Who would")
                     .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
@@ -57,7 +54,6 @@ struct HomeView: View {
                     .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
                     .foregroundStyle(EmoryTheme.textPrimary)
 
-                // Accent line
                 RoundedRectangle(cornerRadius: 2)
                     .fill(EmoryTheme.primary)
                     .frame(width: showAccentLine ? 60 : 0, height: 4)
@@ -70,7 +66,6 @@ struct HomeView: View {
 
             Spacer()
 
-            // Card buttons
             VStack(spacing: 20) {
                 NavigationLink(destination: PeopleView()) {
                     HomeCardButton(
@@ -84,17 +79,17 @@ struct HomeView: View {
                 .opacity(showPeopleCard ? 1 : 0)
                 .offset(y: showPeopleCard ? 0 : 40)
 
-                NavigationLink(destination: SettingsView()) {
+                NavigationLink(destination: MemoriesView()) {
                     HomeCardButton(
-                        icon: "gearshape.fill",
-                        title: "Settings",
+                        icon: "brain.head.profile",
+                        title: "Memories",
                         color: EmoryTheme.secondary,
                         fontSize: settings.fontSize
                     )
                 }
                 .buttonStyle(BounceButtonStyle())
-                .opacity(showSettingsCard ? 1 : 0)
-                .offset(y: showSettingsCard ? 0 : 40)
+                .opacity(showMemoriesCard ? 1 : 0)
+                .offset(y: showMemoriesCard ? 0 : 40)
             }
             .padding(.horizontal, 24)
 
@@ -102,8 +97,11 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(EmoryTheme.background.ignoresSafeArea())
+        .task(id: "\(settings.isMockMode)-\(settings.backendURL)") {
+            guard !settings.isMockMode else { return }
+            await connectionStore.testConnection()
+        }
         .onAppear {
-            // Staggered entry animation
             withAnimation(.easeOut(duration: 0.5)) {
                 showHeader = true
             }
@@ -117,15 +115,11 @@ struct HomeView: View {
                 showPeopleCard = true
             }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.75)) {
-                showSettingsCard = true
+                showMemoriesCard = true
             }
         }
     }
 }
-
-// MARK: - Home Card Button
-
-// MARK: - Bounce Button Style
 
 struct BounceButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -135,8 +129,6 @@ struct BounceButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
-
-// MARK: - Home Card Button (People)
 
 struct HomeCardButton: View {
     let icon: String
@@ -166,4 +158,3 @@ struct HomeCardButton: View {
         .shadow(color: EmoryTheme.cardShadow, radius: 8, x: 0, y: 2)
     }
 }
-

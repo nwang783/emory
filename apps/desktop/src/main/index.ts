@@ -21,6 +21,7 @@ import { loadEnvironment } from './services/env.service.js'
 import { RemoteIngestSettingsService } from './services/remote-ingest-settings.service.js'
 import { RemoteIngestServerService } from './services/remote-ingest-server.service.js'
 import { registerRemoteIngestIpc } from './ipc/remote-ingest.ipc.js'
+import { MobileApiService } from './services/mobile-api.service.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -162,7 +163,8 @@ app.whenReady().then(async () => {
   )
 
   const remoteIngestSettings = new RemoteIngestSettingsService(app.getPath('userData'))
-  const remoteIngestServer = new RemoteIngestServerService()
+  const mobileApiService = new MobileApiService(peopleRepo, encounterRepo, conversationRepo)
+  const remoteIngestServer = new RemoteIngestServerService(mobileApiService)
   registerRemoteIngestIpc(remoteIngestSettings, remoteIngestServer)
   const remoteIngestPersisted = await remoteIngestSettings.load()
   if (remoteIngestPersisted.enabled) {

@@ -1,11 +1,12 @@
 import SwiftUI
+import UIKit
 
 // MARK: - People View
-// Grid of enrolled people shown as large photo cards.
-// Designed for easy recognition with big photos and names.
+// Registered people shown as large, easy-to-read cards.
 
 struct PeopleView: View {
     @State private var settings = AppSettings.shared
+    @State private var peopleStore = PeopleStore.shared
     @State private var people: [Person] = Person.samplePeople
     @State private var showAddPerson = false
     @State private var personToRemove: Person?
@@ -17,7 +18,6 @@ struct PeopleView: View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Header text
                     VStack(alignment: .leading, spacing: 4) {
                         Text("My Circle")
                             .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
@@ -29,43 +29,81 @@ struct PeopleView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
 
-                    // People list — single column for easy recognition
-                    VStack(spacing: 14) {
-                        ForEach(people) { person in
-                            NavigationLink(destination: PersonDetailView(person: person)) {
-                                PersonCardView(person: person, fontSize: settings.fontSize)
+                    if peopleStore.isLoading && !settings.isMockMode {
+                        ProgressView("Loading people...")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.horizontal, 24)
+                    } else if let errorMessage = peopleStore.errorMessage, !settings.isMockMode {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Couldn’t load people from the desktop.")
+                                .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                                .foregroundStyle(EmoryTheme.textPrimary)
+                            Text(errorMessage)
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                            Button("Retry") {
+                                Task { await peopleStore.loadPeople() }
                             }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    personToRemove = person
-                                    showRemoveConfirmation = true
-                                } label: {
-                                    Label("Remove", systemImage: "person.badge.minus")
+                            .font(.system(size: settings.fontSize.captionSize, weight: .semibold))
+                            .foregroundStyle(EmoryTheme.primary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                        .emoryCard()
+                        .padding(.horizontal, 24)
+                    } else {
+                        VStack(spacing: 14) {
+                            ForEach(people) { person in
+                                NavigationLink(destination: PersonDetailView(person: person)) {
+                                    PersonCardView(person: person, fontSize: settings.fontSize)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    if settings.isMockMode {
+                                        Button(role: .destructive) {
+                                            personToRemove = person
+                                            showRemoveConfirmation = true
+                                        } label: {
+                                            Label("Remove", systemImage: "person.badge.minus")
+                                        }
+                                    }
                                 }
                             }
                         }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 80)
                     }
+
+                    Group {
+                        if settings.isMockMode {
+                            Text("Mock mode is on. Turn it off in Settings to load people from the desktop database.")
+                        } else {
+                            Text("Showing people from the desktop SQLite database.")
+                        }
+                    }
+                    .font(.system(size: settings.fontSize.captionSize))
+                    .foregroundStyle(EmoryTheme.textSecondary)
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 80)
+                    .padding(.top, 4)
                 }
             }
             .background(EmoryTheme.background.ignoresSafeArea())
 
-            // Floating add button
-            Button {
-                showAddPerson = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(EmoryTheme.primary)
-                    .clipShape(Circle())
-                    .shadow(color: EmoryTheme.primary.opacity(0.3), radius: 8, y: 4)
+            if settings.isMockMode {
+                Button {
+                    showAddPerson = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(EmoryTheme.primary)
+                        .clipShape(Circle())
+                        .shadow(color: EmoryTheme.primary.opacity(0.3), radius: 8, y: 4)
+                }
+                .padding(.trailing, 24)
+                .padding(.bottom, 24)
             }
-            .padding(.trailing, 24)
-            .padding(.bottom, 24)
         }
         .navigationTitle("People")
         .navigationBarTitleDisplayMode(.inline)
@@ -100,10 +138,17 @@ struct PeopleView: View {
                 showAddPerson = false
             }
         }
+        .task(id: "\(settings.isMockMode)-\(settings.backendURL)") {
+            await peopleStore.loadPeople()
+            people = settings.isMockMode ? Person.samplePeople : peopleStore.people
+        }
+        .onChange(of: peopleStore.people) { _, newValue in
+            if !settings.isMockMode {
+                people = newValue
+            }
+        }
     }
 }
-
-// MARK: - Person Card
 
 struct PersonCardView: View {
     let person: Person
@@ -111,7 +156,6 @@ struct PersonCardView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            // Photo
             if let photoAsset = person.photoName,
                UIImage(named: photoAsset) != nil {
                 Image(photoAsset)
@@ -120,14 +164,11 @@ struct PersonCardView: View {
                     .frame(width: 110, height: 110)
                     .clipShape(Circle())
             } else {
-                ZStack {
-                    Circle()
-                        .fill(EmoryTheme.primary.opacity(0.08))
-                        .frame(width: 110, height: 110)
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 54))
-                        .foregroundStyle(EmoryTheme.primary.opacity(0.5))
-                }
+                FaceThumbnailView(
+                    faceThumbnail: person.faceThumbnail,
+                    fallbackSystemImage: "person.circle.fill",
+                    size: 110
+                )
             }
 
             Text(person.name)
@@ -143,8 +184,6 @@ struct PersonCardView: View {
         .emoryCard()
     }
 }
-
-// MARK: - Add Person Sheet
 
 struct AddPersonSheet: View {
     @Binding var name: String
