@@ -91,6 +91,30 @@ export class PeopleRepository {
     return rows.map(rowToPerson)
   }
 
+  searchByName(query: string, limit: number = 5): Person[] {
+    const db = this.adapter.getDb()
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) return []
+
+    const likeValue = `%${normalized}%`
+    const rows = db.prepare(`
+      SELECT *
+      FROM people
+      WHERE lower(name) LIKE ?
+      ORDER BY
+        CASE
+          WHEN lower(name) = ? THEN 0
+          WHEN lower(name) LIKE ? THEN 1
+          ELSE 2
+        END,
+        length(name) ASC,
+        created_at DESC
+      LIMIT ?
+    `).all(likeValue, normalized, `${normalized}%`, limit) as PersonRow[]
+
+    return rows.map(rowToPerson)
+  }
+
   findSelf(): Person | null {
     const db = this.adapter.getDb()
     const row = db.prepare('SELECT * FROM people WHERE is_self = 1 LIMIT 1').get() as PersonRow | undefined
@@ -293,6 +317,8 @@ export class PeopleRepository {
     const doMerge = db.transaction(() => {
       db.prepare('UPDATE face_embeddings SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
       db.prepare('UPDATE encounters SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
+      db.prepare('UPDATE conversation_recordings SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
+      db.prepare('UPDATE person_memories SET person_id = ? WHERE person_id = ?').run(keepId, mergeId)
       db.prepare(
         'UPDATE relationships SET person_a_id = ? WHERE person_a_id = ?'
       ).run(keepId, mergeId)

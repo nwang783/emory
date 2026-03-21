@@ -56,7 +56,7 @@ The current repo already contains the core of the desktop recognition system:
   - storing `conversation_recordings` and `person_memories`
   - Deepgram transcription of saved audio files
   - OpenRouter-based structured memory extraction
-  - querying recent memories by person
+  - querying memories by person name or time window from audio prompts
 
 The mobile streaming bridge is represented in `apps/mobile`, but it is still early and should be described as **planned / in progress**, not complete.
 
@@ -76,14 +76,15 @@ The mobile streaming bridge is represented in `apps/mobile`, but it is still ear
 - **Conversation layer:** record audio while a recognized person is actively present
 - **Transcription layer:** Deepgram speech-to-text
 - **Memory layer:** OpenRouter LLM extracts structured memories from transcripts
-- **Recall layer:** show or speak short summaries about the recognized person during future encounters
+- **Recall layer:** show or speak short summaries about the recognized person during future encounters, and answer simple spoken questions like "Who is Ryan?" or "What did I do at 2 PM today?"
 
 ## Architecture Notes
 
 - **Local-first by default:** identity data, embeddings, encounters, transcripts, and extracted memories are stored locally in SQLite.
 - **Face recognition runs on desktop:** the Electron app is currently the main runtime for ONNX inference and persistence.
 - **Memory extraction is asynchronous:** recording is stored first, then transcription and LLM extraction enrich it.
-- **Future UX direction:** beyond passive summaries, the user should be able to ask follow-up questions about a person and retrieve stored memories on demand.
+- **Memory querying now exists in a hackathon form:** audio query -> speech-to-text -> retrieval plan -> SQLite search -> grounded answer.
+- **Future iPhone audio direction:** the iPhone app should act as the voice ingress and egress layer, forwarding short audio clips to the desktop query service and playing returned TTS audio back through the glasses.
 
 ## Hackathon Build Plan
 
@@ -104,6 +105,7 @@ Conversation processing currently expects these environment variables:
 DEEPGRAM_API_KEY=...
 OPENROUTER_API_KEY=...
 MEMORY_EXTRACTION_MODEL=openai/gpt-4.1-mini
+MEMORY_QUERY_MODEL=openai/gpt-4.1-mini
 ```
 
 The desktop face pipeline also expects the ONNX face models used by `@emory/core`.
@@ -116,6 +118,29 @@ bun run manual:process-recording -- --audio-path /absolute/path/to/file.m4a
 ```
 
 That script creates a temporary local SQLite DB, seeds placeholder people, runs transcription and memory extraction, and prints the stored recording and memories.
+
+For manual memory-query testing, put your audio files under `tmp/manual-audio/` in the repo root and use:
+
+```bash
+mkdir -p tmp/manual-audio
+
+cd apps/desktop
+bun run manual:process-recording -- \
+  --db-path ../../tmp/manual-test/emory.db \
+  --audio-path ../../tmp/manual-audio/ryan-memory.m4a
+
+bun run manual:query-memory -- \
+  --db-path ../../tmp/manual-test/emory.db \
+  --audio-path ../../tmp/manual-audio/who-is-ryan.m4a
+```
+
+The manual scripts seed Ryan as the wearer's grandson with these facts:
+- Ryan goes to UVA
+- Ryan is about to propose to his girlfriend
+
+Current hackathon limitation:
+- timeline questions work best when self-memories have already been stored in `person_memories`
+- recordings are still keyed to the conversation partner, so self-timeline recall is currently memory-first rather than recording-first
 
 ## Development
 

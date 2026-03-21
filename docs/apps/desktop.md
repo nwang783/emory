@@ -22,11 +22,16 @@ apps/desktop/
     │   ├── index.ts                  # Electron main process entry
     │   ├── ipc/
     │   │   ├── db.ipc.ts             # Database IPC handlers
+    │   │   ├── conversation.ipc.ts   # Recording processing + memory query IPC handlers
     │   │   ├── encounter.ipc.ts      # Encounter/session IPC handlers
     │   │   ├── face.ipc.ts           # Face processing IPC handlers
     │   │   └── unknown.ipc.ts        # Unknown person tracking IPC handlers
     │   └── services/
-    │       └── cleanup.service.ts    # Periodic data retention cleanup job
+    │       ├── cleanup.service.ts    # Periodic data retention cleanup job
+    │       ├── conversation-processing.service.ts # Audio -> transcript -> extracted memories
+    │       ├── memory-query.service.ts # Query audio/text -> retrieval -> grounded answer
+    │       ├── memory-query-understanding.service.ts # LLM query planning
+    │       └── memory-answer.service.ts # LLM answer synthesis from retrieved evidence
     ├── preload/
     │   ├── index.ts                  # Context bridge API
     │   └── types.d.ts                # Window type augmentation
@@ -93,8 +98,8 @@ apps/desktop/
 | Layer | Responsibility |
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
-| **Services** (`src/main/services/`) | Background services running in the main process. `CleanupService` runs a daily data retention job that deletes old encounters and unknown sightings based on user-configured retention policies stored in `retention_config`. |
-| **IPC Handlers** (`src/main/ipc/`) | Bridge between renderer requests and backend services. `db.ipc.ts` wraps `PeopleRepository` (people + embeddings CRUD, **`db:people:get-self`** / **`db:people:set-self`** for the connection-web “me” person), `RelationshipRepository` (**duplicate pair rejected** on create), and `RetentionRepository`; `encounter.ipc.ts` wraps `EncounterRepository` (session + encounter lifecycle); `face.ipc.ts` wraps `FaceService` plus auto-learn persistence rules (cooldown, diversity, caps, server-side embedding verification); `unknown.ipc.ts` wraps `UnknownSightingRepository` for tracking unrecognized faces. |
+| **Services** (`src/main/services/`) | Background services running in the main process. `CleanupService` runs a daily data retention job that deletes old encounters and unknown sightings based on user-configured retention policies stored in `retention_config`. `ConversationProcessingService` handles saved audio recordings. `MemoryQueryService` handles spoken memory queries by combining STT, retrieval planning, SQLite lookups, and grounded answer synthesis. |
+| **IPC Handlers** (`src/main/ipc/`) | Bridge between renderer requests and backend services. `db.ipc.ts` wraps `PeopleRepository` (people + embeddings CRUD, **`db:people:get-self`** / **`db:people:set-self`** for the connection-web “me” person), `RelationshipRepository` (**duplicate pair rejected** on create), and `RetentionRepository`; `conversation.ipc.ts` wraps saved recording processing plus `conversation:query-memories`; `encounter.ipc.ts` wraps `EncounterRepository` (session + encounter lifecycle); `face.ipc.ts` wraps `FaceService` plus auto-learn persistence rules (cooldown, diversity, caps, server-side embedding verification); `unknown.ipc.ts` wraps `UnknownSightingRepository` for tracking unrecognized faces. |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
 
@@ -215,6 +220,38 @@ The camera view includes a **"Who is that?"** button that announces identified p
 | `speak(text, rate?)` | Returns a `Promise<void>` that resolves when speech ends. Cancels any in-progress speech first. Prefers a local English voice. |
 | `isSpeaking()` | Returns `true` while an utterance is active |
 | `stopSpeaking()` | Cancels current speech immediately |
+
+## Memory query pipeline
+
+The desktop main process now supports a hackathon-grade spoken memory query flow:
+
+1. Save or receive a short query audio clip.
+2. Transcribe it with `DeepgramService`.
+3. Convert the spoken question into a retrieval plan with `MemoryQueryUnderstandingService`.
+4. Search SQLite using fuzzy person-name matching plus time-window and text filters in `ConversationRepository` / `PeopleRepository`.
+5. Synthesize a short grounded answer with `MemoryAnswerService`.
+
+This supports questions like:
+
+- "Who is Ryan?"
+- "What did I do at 2 PM today?"
+
+Current limitation:
+
+- self-timeline answers depend on self memories already being stored in `person_memories`
+- conversation recordings are still keyed to the conversation partner, so self timeline queries rely on memory rows more than recording rows
+
+## Future iPhone audio integration
+
+The future mobile path should keep the desktop app as the memory authority:
+
+1. iPhone app captures a short audio query from the glasses.
+2. iPhone app sends that audio clip, plus timestamp metadata, to the desktop app over the local bridge.
+3. Desktop runs the same `MemoryQueryService` pipeline described above.
+4. Desktop returns a short answer text or synthesized audio.
+5. iPhone app plays the response back to the glasses.
+
+For the hackathon, the manual scripts stand in for that iPhone leg by accepting local audio files.
 
 ## Match margin
 

@@ -91,17 +91,26 @@ export class ConversationProcessingService {
       recording = this.conversationRepo.setExtractionResult(recording.id, extraction) ?? recording
 
       const acceptedMemories = extraction.memories
-        .filter((memory) => memory.appliesToPerson === 'target_person')
         .filter((memory) => memory.confidence === null || memory.confidence >= MEMORY_CONFIDENCE_THRESHOLD)
-        .map((memory) => ({
-          personId: input.personId,
-          recordingId: recording.id,
-          memoryText: memory.memoryText,
-          memoryType: memory.memoryType,
-          memoryDate: memory.memoryDate,
-          confidence: memory.confidence,
-          sourceQuote: memory.sourceQuote,
-        }))
+        .flatMap((memory) => {
+          const ownerPersonId = memory.appliesToPerson === 'target_person'
+            ? input.personId
+            : memory.appliesToPerson === 'self_person'
+              ? selfPerson?.id ?? null
+              : null
+
+          if (!ownerPersonId) return []
+
+          return [{
+            personId: ownerPersonId,
+            recordingId: recording.id,
+            memoryText: memory.memoryText,
+            memoryType: memory.memoryType,
+            memoryDate: memory.memoryDate,
+            confidence: memory.confidence,
+            sourceQuote: memory.sourceQuote,
+          }]
+        })
 
       const memories = this.conversationRepo.addMemories(acceptedMemories)
       return { recording, memories }
