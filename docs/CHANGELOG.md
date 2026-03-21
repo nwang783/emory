@@ -1,5 +1,16 @@
 # Documentation changelog
 
+## 2026-03-21 — gitignore `.agents/`
+
+- **`.gitignore`** — Ignore **`.agents/`** entirely (local gstack clone + skills, not committed). Removed narrower `.agents/...` rules superseded by this.
+- **[agents/gstack.md](./agents/gstack.md)**, **[`CLAUDE.md`](../CLAUDE.md)** — Document local-only install (clone + `./setup --host codex` + optional Cursor stubs).
+
+## 2026-03-21 — gstack agent skills
+
+- **gstack** — [garrytan/gstack](https://github.com/garrytan/gstack) (MIT); install under **`.agents/skills/gstack/`** (see [agents/gstack.md](./agents/gstack.md)), run `./setup --host codex` from Git Bash for browse + Playwright. Optional **`gstack-*`** / **`gstack-workflow`** stubs under `.agents/skills/` for Cursor discovery.
+- **[agents/gstack.md](./agents/gstack.md)** — Layout, teammate setup, telemetry note, `setup` sidecar quirk.
+- **Root [`CLAUDE.md`](../CLAUDE.md)** — gstack section and slash-command list for agents.
+
 ## 2026-03-21 — iOS remote ingest implementer guide
 
 - **[architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md)** — For agents/devs building the Swift app: Tailscale prerequisites, `GET /health` JSON contract (field table), UDP beacon integration notes, manual config UX, Info.plist / Local Network, suggested `emory/` file layout, QA matrix, placeholders for future WSS/WebRTC.
