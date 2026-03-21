@@ -13,13 +13,15 @@ struct HomeView: View {
     @State private var showAccentLine = false
     @State private var showPeopleCard = false
     @State private var showMemoriesCard = false
+    @State private var accentBreathing = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Emory")
-                    .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
-                    .foregroundStyle(EmoryTheme.primary)
+                Image("EmoryLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 36)
 
                 Spacer()
 
@@ -57,6 +59,7 @@ struct HomeView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(EmoryTheme.primary)
                     .frame(width: showAccentLine ? 60 : 0, height: 4)
+                    .opacity(accentBreathing ? 0.5 : 1.0)
                     .padding(.top, 4)
             }
             .multilineTextAlignment(.center)
@@ -76,6 +79,7 @@ struct HomeView: View {
                     )
                 }
                 .buttonStyle(BounceButtonStyle())
+                .simultaneousGesture(TapGesture().onEnded { Haptics.light() })
                 .opacity(showPeopleCard ? 1 : 0)
                 .offset(y: showPeopleCard ? 0 : 40)
 
@@ -88,6 +92,7 @@ struct HomeView: View {
                     )
                 }
                 .buttonStyle(BounceButtonStyle())
+                .simultaneousGesture(TapGesture().onEnded { Haptics.light() })
                 .opacity(showMemoriesCard ? 1 : 0)
                 .offset(y: showMemoriesCard ? 0 : 40)
             }
@@ -116,6 +121,11 @@ struct HomeView: View {
             }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.75)) {
                 showMemoriesCard = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    accentBreathing = true
+                }
             }
         }
     }
@@ -153,8 +163,21 @@ struct HomeCardButton: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .background(EmoryTheme.cardBackground)
+        .background(
+            ZStack {
+                EmoryTheme.cardBackground
+                LinearGradient(
+                    colors: [color.opacity(0.03), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        )
         .clipShape(RoundedRectangle(cornerRadius: 24))
-        .shadow(color: EmoryTheme.cardShadow, radius: 8, x: 0, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(color.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: color.opacity(0.12), radius: 12, x: 0, y: 4)
     }
 }

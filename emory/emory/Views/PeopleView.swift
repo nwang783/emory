@@ -154,34 +154,60 @@ struct PersonCardView: View {
     let person: Person
     let fontSize: EmoryTheme.FontSize
 
+    private var accentColor: Color {
+        EmoryTheme.relationshipColor(for: person.relationship)
+    }
+
     var body: some View {
-        VStack(spacing: 10) {
-            if let photoAsset = person.photoName,
-               UIImage(named: photoAsset) != nil {
-                Image(photoAsset)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 110, height: 110)
-                    .clipShape(Circle())
-            } else {
-                FaceThumbnailView(
-                    faceThumbnail: person.faceThumbnail,
-                    fallbackSystemImage: "person.circle.fill",
-                    size: 110
-                )
+        VStack(spacing: 0) {
+            accentColor
+                .frame(height: 4)
+
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(accentColor.opacity(0.08))
+                        .frame(width: 120, height: 120)
+
+                    if let photoAsset = person.photoName,
+                       UIImage(named: photoAsset) != nil {
+                        Image(photoAsset)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 110, height: 110)
+                            .clipShape(Circle())
+                    } else {
+                        FaceThumbnailView(
+                            faceThumbnail: person.faceThumbnail,
+                            fallbackSystemImage: "person.circle.fill",
+                            size: 110
+                        )
+                    }
+                }
+
+                Text(person.name)
+                    .font(.system(size: fontSize.bodySize, weight: .bold))
+                    .foregroundStyle(EmoryTheme.textPrimary)
+
+                Text(person.relationship)
+                    .font(.system(size: fontSize.captionSize, weight: .medium))
+                    .foregroundStyle(accentColor)
+
+                if let lastSeen = person.lastSeen, !lastSeen.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 11))
+                        Text("Last seen \(lastSeen)")
+                            .font(.system(size: fontSize.captionSize - 2))
+                    }
+                    .foregroundStyle(EmoryTheme.textSecondary)
+                    .padding(.top, 2)
+                }
             }
-
-            Text(person.name)
-                .font(.system(size: fontSize.bodySize, weight: .bold))
-                .foregroundStyle(EmoryTheme.textPrimary)
-
-            Text(person.relationship)
-                .font(.system(size: fontSize.captionSize))
-                .foregroundStyle(EmoryTheme.primary)
+            .padding(.vertical, 24)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .emoryCard()
+        .emoryCardElevated()
     }
 }
 

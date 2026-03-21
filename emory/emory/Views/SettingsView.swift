@@ -148,14 +148,10 @@ struct SettingsView: View {
 
                 // Emory branding
                 VStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(EmoryTheme.primary)
-                            .frame(width: 64, height: 64)
-                        Image(systemName: "eye.fill")
-                            .font(.system(size: 26))
-                            .foregroundStyle(.white)
-                    }
+                    Image("EmoryLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 64, height: 64)
 
                     Text("Emory")
                         .font(.system(size: settings.fontSize.bodySize, weight: .bold))

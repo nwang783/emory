@@ -67,7 +67,11 @@ struct PersonDetailView: View {
 
                 contentSection(title: "Key Facts") {
                     if resolvedPerson.keyFacts.isEmpty {
-                        emptyState("No key facts yet.")
+                        illustratedEmptyState(
+                            icon: "sparkles",
+                            message: "No key facts yet",
+                            hint: "Important details about \(resolvedPerson.name) will appear here."
+                        )
                     } else {
                         ForEach(resolvedPerson.keyFacts, id: \.self) { fact in
                             detailRow(icon: "sparkles", color: EmoryTheme.secondary, title: fact)
@@ -77,7 +81,11 @@ struct PersonDetailView: View {
 
                 contentSection(title: "Important Dates") {
                     if resolvedPerson.importantDates.isEmpty {
-                        emptyState("No important dates saved.")
+                        illustratedEmptyState(
+                            icon: "calendar.badge.clock",
+                            message: "No important dates saved",
+                            hint: "Birthdays, anniversaries, and special days go here."
+                        )
                     } else {
                         ForEach(resolvedPerson.importantDates, id: \.label) { date in
                             detailRow(icon: "calendar", color: EmoryTheme.primary, title: date.label, subtitle: date.date)
@@ -87,7 +95,11 @@ struct PersonDetailView: View {
 
                 contentSection(title: "Recent Topics") {
                     if resolvedPerson.lastTopics.isEmpty {
-                        emptyState("No recent topics yet.")
+                        illustratedEmptyState(
+                            icon: "bubble.left.and.bubble.right",
+                            message: "No recent topics yet",
+                            hint: "Topics from conversations will appear here."
+                        )
                     } else {
                         ForEach(resolvedPerson.lastTopics, id: \.self) { topic in
                             detailRow(icon: "bubble.left.and.bubble.right", color: EmoryTheme.primary, title: topic)
@@ -95,9 +107,34 @@ struct PersonDetailView: View {
                     }
                 }
 
+                if !resolvedPerson.conversationStarters.isEmpty {
+                    contentSection(title: "Conversation Starters") {
+                        FlowLayout(spacing: 8) {
+                            ForEach(resolvedPerson.conversationStarters, id: \.self) { starter in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "text.bubble")
+                                        .font(.system(size: 13))
+                                    Text(starter)
+                                        .font(.system(size: settings.fontSize.captionSize))
+                                }
+                                .foregroundStyle(EmoryTheme.primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(EmoryTheme.primary.opacity(0.08))
+                                .clipShape(Capsule())
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                    }
+                }
+
                 contentSection(title: "Recent Memories") {
                     if recentMemories.isEmpty {
-                        emptyState("No extracted memories yet.")
+                        illustratedEmptyState(
+                            icon: "brain.head.profile",
+                            message: "No memories yet",
+                            hint: "Extracted conversation memories will show up here."
+                        )
                     } else {
                         ForEach(recentMemories) { memory in
                             detailRow(
@@ -112,7 +149,11 @@ struct PersonDetailView: View {
 
                 contentSection(title: "Recent Encounters") {
                     if recentEncounters.isEmpty {
-                        emptyState("No recent encounters yet.")
+                        illustratedEmptyState(
+                            icon: "person.wave.2",
+                            message: "No recent encounters",
+                            hint: "When \(resolvedPerson.name) is recognized, encounters will appear here."
+                        )
                     } else {
                         ForEach(recentEncounters) { encounter in
                             detailRow(
@@ -154,6 +195,7 @@ struct PersonDetailView: View {
                     }
 
                     Button {
+                        Haptics.medium()
                         showEnrollConfirmation = true
                     } label: {
                         HStack(spacing: 8) {
@@ -290,11 +332,27 @@ struct PersonDetailView: View {
         .padding(.horizontal, 24)
     }
 
-    private func emptyState(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: settings.fontSize.captionSize))
-            .foregroundStyle(EmoryTheme.textSecondary)
-            .padding(.horizontal, 24)
+    private func illustratedEmptyState(icon: String, message: String, hint: String) -> some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(EmoryTheme.primary.opacity(0.06))
+                    .frame(width: 52, height: 52)
+                Image(systemName: icon)
+                    .font(.system(size: 22))
+                    .foregroundStyle(EmoryTheme.primary.opacity(0.4))
+            }
+            Text(message)
+                .font(.system(size: settings.fontSize.captionSize, weight: .medium))
+                .foregroundStyle(EmoryTheme.textSecondary)
+            Text(hint)
+                .font(.system(size: settings.fontSize.captionSize - 2))
+                .foregroundStyle(EmoryTheme.textSecondary.opacity(0.7))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
     }
 
     private func iconForMemoryType(_ memoryType: String) -> String {
@@ -392,6 +450,48 @@ struct AddNoteSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let containerWidth = proposal.width ?? .infinity
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > containerWidth && currentX > 0 {
+                currentY += rowHeight + spacing
+                currentX = 0
+                rowHeight = 0
+            }
+            currentX += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return CGSize(width: containerWidth, height: currentY + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var currentX: CGFloat = bounds.minX
+        var currentY: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > bounds.maxX && currentX > bounds.minX {
+                currentY += rowHeight + spacing
+                currentX = bounds.minX
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: currentX, y: currentY), proposal: .unspecified)
+            currentX += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }

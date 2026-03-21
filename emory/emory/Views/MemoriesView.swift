@@ -39,15 +39,28 @@ struct MemoriesView: View {
                     .emoryCard()
                     .padding(.horizontal, 24)
                 } else if memoriesStore.groups.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("No memories yet")
-                            .font(.system(size: settings.fontSize.titleSize, weight: .semibold))
-                            .foregroundStyle(EmoryTheme.textPrimary)
-                        Text("Once conversations are processed on desktop, they’ll appear here grouped by person.")
-                            .font(.system(size: settings.fontSize.captionSize))
-                            .foregroundStyle(EmoryTheme.textSecondary)
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(EmoryTheme.tertiary.opacity(0.10))
+                                .frame(width: 72, height: 72)
+                            Image(systemName: "brain.head.profile")
+                                .font(.system(size: 30))
+                                .foregroundStyle(EmoryTheme.tertiary.opacity(0.5))
+                        }
+                        VStack(spacing: 6) {
+                            Text("No memories yet")
+                                .font(.system(size: settings.fontSize.titleSize, weight: .semibold))
+                                .foregroundStyle(EmoryTheme.textPrimary)
+                            Text("Once conversations are processed on desktop, they’ll appear here grouped by person.")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                                .multilineTextAlignment(.center)
+                        }
                     }
-                    .padding(20)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    .padding(.horizontal, 20)
                     .emoryCard()
                     .padding(.horizontal, 24)
                 } else {
