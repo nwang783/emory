@@ -1,5 +1,77 @@
 # Documentation changelog
 
+## 2026-03-21 — Remote ingest: Tailscale + local LAN bind mode
+
+- **Desktop** — [`remote-ingest.types.ts`](../apps/desktop/src/main/services/remote-ingest.types.ts): bind mode **`tailscale_lan`** (default): listen **`0.0.0.0`**, list **100.x then other LAN** IPv4s via [`buildEffectiveAddresses`](../apps/desktop/src/main/services/remote-ingest-network.ts). [`GET /health`](../apps/desktop/src/main/services/remote-ingest-server.service.ts) + UDP beacon include **`advertisedAddresses`**. Settings + IPC + preload + store updated.
+- **Docs** — [remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [remote-discovery.md](./architecture/remote-discovery.md), [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md).
+
+## 2026-03-21 — WebRTC: open questions (documented doubts)
+
+- **[remote-ingest-webrtc-encoding.md](./architecture/remote-ingest-webrtc-encoding.md)** — “Open questions / documented doubts”: iOS stack choice (WebRTC.framework vs Meta/custom), HEVC vs H.264, TURN need, untuned bitrate/FPS defaults.
+
+## 2026-03-21 — WebRTC: codec preferences + encoding guide
+
+- **Desktop** — [`orderVideoCodecsForIngest.ts`](../apps/desktop/src/renderer/modules/camera/lib/orderVideoCodecsForIngest.ts), [`useRemoteIngestWebRtc.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts): before `createAnswer()`, prefer **H.264 → VP8 → VP9 → AV1** on video m-lines; `max-bundle` + `rtcpMuxPolicy: require`. Unit tests (pure SDP/codec ordering): [`orderVideoCodecsForIngest.test.ts`](../apps/desktop/src/renderer/modules/camera/lib/orderVideoCodecsForIngest.test.ts) — `bun run test:camera-codecs` in `apps/desktop`.
+- **Docs** — [remote-ingest-webrtc-encoding.md](./architecture/remote-ingest-webrtc-encoding.md) (mobile encoder checklist: FPS, bitrate, GOP, degradation).
+- **Tooling** — [`apps/desktop/tsconfig.web.json`](../apps/desktop/tsconfig.web.json) excludes `**/*.test.ts` from renderer typecheck.
+
+## 2026-03-21 — Camera: remote overlay + detection dimensions
+
+- **Renderer** — [`WebcamFeed.tsx`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx): `runDetection` and overlay sizing use **`frameWidth` / `frameHeight`** from the active feed (local, JPEG remote, or WebRTC) instead of the local-only `videoRef`, so boxes and `detectOnly` run correctly for remote ingest.
+- **Docs** — [remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md) “Framerate and smooth preview”.
+
+## 2026-03-21 — Remote ingest: WebRTC `/signaling` + proto 3
+
+- **Desktop** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): second WebSocket **`/signaling`** for JSON **SDP/ICE** relay; roles **`?role=desktop`** (renderer) vs **`?role=mobile`** (phone). `/health` + UDP beacon **`protoVersion` 3** + `wsSignalingPath`.
+- **Config** — `webrtcVideoPreferred` in persisted config + IPC + preload; **Settings → Prefer WebRTC video** ([`RemoteIngestSettings.tsx`](../apps/desktop/src/renderer/modules/settings/components/RemoteIngestSettings.tsx)).
+- **Renderer** — [`useRemoteIngestWebRtc.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts), [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts): default to WebRTC when preferred; JPEG `/ingest` when off.
+- **Docs** — [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md), [remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [remote-discovery.md](./architecture/remote-discovery.md), [remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md), [apps/desktop.md](./apps/desktop.md).
+
+## 2026-03-21 — Remote ingest: WS `/ingest` + Camera viewer
+
+- **Desktop** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): WebSocket **`/ingest`** relays binary frames from **publisher** (phone) to **viewers** (desktop). `/health` **`protoVersion` 2** + `wsIngestPath`. [`@emory/ingest-protocol`](../packages/ingest-protocol/) shared parse/constants.
+- **Renderer** — [`useCameraFeed`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts), [`remote-ingest.store.ts`](../apps/desktop/src/renderer/shared/stores/remote-ingest.store.ts), IPC **`remote-ingest:updated`**, [`WebcamFeed`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx): remote JPEG preview + face pipeline when ingest on; **Use computer camera** override (`sessionStorage`).
+- **Docs** — [remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md), [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md), [remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [remote-discovery.md](./architecture/remote-discovery.md), [apps/desktop.md](./apps/desktop.md).
+
+## 2026-03-21 — Desktop in-page mini sidebars
+
+- **Layout** — [`PageLayout.tsx`](../apps/desktop/src/renderer/shared/components/PageLayout.tsx): `PageWorkspace` (main + rail), `MiniSidebarNav` (section / filter list with optional icons and counts), `MiniSidebarPanel` (static rail content, e.g. legend).
+- **Modules** — **Settings** uses category rail + one panel per category; **Activity** filter rail; **Analytics** view switcher; **Embeddings** people jump list (scroll + expand); **Memories** memory-type rail; **People** (full width) overview rail; **Connections** right-hand legend rail. **Camera** people column slightly narrower with translucent card.
+- **Chrome** — Primary sidebar ~196px; header height 11; light backdrop blur on header / page titles where used.
+- **Fix** — `EmbeddingGallery` closed with matching `PageScroll` (was a stray `</ScrollArea>`). **MemoryBrowser** debug `console.log` / `console.error` removed.
+- **Docs** — [apps/desktop-ui.md](./apps/desktop-ui.md) updated for mini-sidebar pattern.
+
+## 2026-03-21 — Desktop module page layouts (`PageLayout`)
+
+- **Shared primitives** — [`PageLayout.tsx`](../apps/desktop/src/renderer/shared/components/PageLayout.tsx): `PageShell`, `PageHeader`, `PageToolbar`, `PageScroll`, `PageFill`.
+- **Modules** — Activity, Analytics, People, Settings, Connections, **Embeddings** (`EmbeddingGallery`), **Memories** (`MemoryBrowser`) compose these for consistent headers, toolbars, and scroll vs full-bleed canvas.
+- **Connections** — Legend row uses `PageToolbar`; graph uses `PageFill`. Closing tag aligned to `PageShell`.
+- **Docs** — [apps/desktop-ui.md](./apps/desktop-ui.md) “Page layout primitives” section.
+
+## 2026-03-21 — Desktop UI: anti–“vibecode” pass
+
+- **Restraint** — Flat main surface (no radial meshes); near-neutral `oklch` palette; desaturated primary; cards use border only (no ring stack).
+- **Chrome** — Header: solid bar, simple bordered logo tile; sidebar: no tooltips on labeled items, active = `accent` only; status bar: semantic `foreground` instead of arbitrary colors; sentence case labels.
+- **Type** — Module titles default to **Inter** semibold; **Plus Jakarta** limited to app name + Settings H1; see [desktop-ui.md](./apps/desktop-ui.md).
+
+## 2026-03-21 — Desktop UI refresh (Vercel / Tailscale–inspired)
+
+- **Renderer** — Wider **grouped sidebar** (Workspace / Insights / System), refined **header** (gradient mark, mono status chips), **status bar** with JetBrains Mono, main area **`app-main-surface`** gradient wash; camera rail uses translucent card treatment.
+- **Theme** — Cool dark `oklch` neutrals + indigo primary in [`index.css`](../apps/desktop/src/renderer/index.css); **Inter Variable**, **Plus Jakarta Sans** (`font-heading`), **JetBrains Mono** (`font-mono-ui`) via fontsource packages.
+- **Modules** — Consistent page headers (border + `font-heading`) on Activity, Analytics, Connections, Embeddings, Memories, People, Settings.
+- **Docs** — [apps/desktop-ui.md](./apps/desktop-ui.md), link from [apps/desktop.md](./apps/desktop.md).
+
+## 2026-03-21 — gitignore `.agents/`
+
+- **`.gitignore`** — Ignore **`.agents/`** entirely (local gstack clone + skills, not committed). Removed narrower `.agents/...` rules superseded by this.
+- **[agents/gstack.md](./agents/gstack.md)**, **[`CLAUDE.md`](../CLAUDE.md)** — Document local-only install (clone + `./setup --host codex` + optional Cursor stubs).
+
+## 2026-03-21 — gstack agent skills
+
+- **gstack** — [garrytan/gstack](https://github.com/garrytan/gstack) (MIT); install under **`.agents/skills/gstack/`** (see [agents/gstack.md](./agents/gstack.md)), run `./setup --host codex` from Git Bash for browse + Playwright. Optional **`gstack-*`** / **`gstack-workflow`** stubs under `.agents/skills/` for Cursor discovery.
+- **[agents/gstack.md](./agents/gstack.md)** — Layout, teammate setup, telemetry note, `setup` sidecar quirk.
+- **Root [`CLAUDE.md`](../CLAUDE.md)** — gstack section and slash-command list for agents.
+
 ## 2026-03-21 — iOS remote ingest implementer guide
 
 - **[architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md)** — For agents/devs building the Swift app: Tailscale prerequisites, `GET /health` JSON contract (field table), UDP beacon integration notes, manual config UX, Info.plist / Local Network, suggested `emory/` file layout, QA matrix, placeholders for future WSS/WebRTC.

@@ -265,7 +265,7 @@ struct StreamDashboardView: View {
     }
 
     func simulateRecognition() {
-        recognizedPerson = Person.samplePeople.first
+        recognizedPerson = PeopleStore.shared.people.first ?? Person.samplePeople.first
         withAnimation(.easeInOut(duration: 0.5)) {
             showRecognitionBanner = true
         }
@@ -418,9 +418,9 @@ struct SegmentedLevelMeter: View {
         } else if position < 0.75 {
             return EmoryTheme.secondary.opacity(0.5)
         } else if position < 0.85 {
-            return Color(hex: "E8D44D").opacity(0.7)
+            return Color(red: 0.91, green: 0.83, blue: 0.30).opacity(0.7)
         } else {
-            return Color(hex: "E0C0C0").opacity(0.6)
+            return Color(red: 0.88, green: 0.75, blue: 0.75).opacity(0.6)
         }
     }
 }

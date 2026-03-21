@@ -2,12 +2,14 @@ import { useState, useCallback } from 'react'
 import { HelpCircle, Volume2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { speak, isSpeaking, stopSpeaking } from '@/shared/lib/voice'
+import { relationshipTypeForSpeech } from '@/shared/lib/graph-relationship-labels'
 
 type IdentifiedPerson = {
   label: string
   personId: string
   similarity: number
-  relationship?: string | null
+  /** Graph `relationships.relationship_type` for the edge to designated self, if any. */
+  graphRelationshipTypeToSelf?: string | null
 }
 
 type Props = {
@@ -41,7 +43,8 @@ export function WhoIsThisButton({ identifiedPeople }: Props): React.JSX.Element 
       const confidence = person.similarity
 
       if (confidence >= HIGH_CONFIDENCE) {
-        const rel = person.relationship ? `, your ${person.relationship}` : ''
+        const t = person.graphRelationshipTypeToSelf
+        const rel = t ? `, your ${relationshipTypeForSpeech(t)}` : ''
         announcements.push(`That's ${person.label}${rel}.`)
       } else if (confidence >= MEDIUM_CONFIDENCE) {
         announcements.push(`I think that's ${person.label}.`)

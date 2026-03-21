@@ -14,7 +14,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
@@ -35,8 +34,6 @@ export function EditPersonModal({
   onSave,
 }: EditPersonModalProps): React.JSX.Element {
   const [name, setName] = useState('')
-  const [relationship, setRelationship] = useState('')
-  const [notes, setNotes] = useState('')
   const [embeddingCount, setEmbeddingCount] = useState(0)
   const [keyFacts, setKeyFacts] = useState<string[]>([])
   const [conversationStarters, setConversationStarters] = useState<string[]>([])
@@ -47,8 +44,6 @@ export function EditPersonModal({
   useEffect(() => {
     if (person) {
       setName(person.name)
-      setRelationship(person.relationship ?? '')
-      setNotes(person.notes ?? '')
       setKeyFacts(person.keyFacts ?? [])
       setConversationStarters(person.conversationStarters ?? [])
       setImportantDates(person.importantDates ?? [])
@@ -84,8 +79,6 @@ export function EditPersonModal({
     try {
       await window.emoryApi.db.people.update(person.id, {
         name: name.trim(),
-        relationship: relationship.trim() || undefined,
-        notes: notes.trim() || undefined,
       })
       await window.emoryApi.db.people.updateProfile(person.id, {
         keyFacts,
@@ -111,7 +104,10 @@ export function EditPersonModal({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit Person</DialogTitle>
-          <DialogDescription>Update details for {person?.name}.</DialogDescription>
+          <DialogDescription>
+            Update details for {person?.name}. Relationship role and connection notes are edited in the Connections tab
+            (graph).
+          </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh]">
@@ -123,27 +119,6 @@ export function EditPersonModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Full name"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-relationship">Relationship</Label>
-              <Input
-                id="edit-relationship"
-                value={relationship}
-                onChange={(e) => setRelationship(e.target.value)}
-                placeholder="Family, Friend, Colleague..."
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-notes">Notes</Label>
-              <Textarea
-                id="edit-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Additional notes about this person..."
-                rows={3}
               />
             </div>
 

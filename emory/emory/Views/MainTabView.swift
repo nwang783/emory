@@ -1,7 +1,7 @@
 import SwiftUI
 
 // MARK: - Main Tab View
-// Bottom tab bar with Home, Glasses, and Help tabs.
+// Bottom tab bar with Home, Glasses, Help, and Settings tabs.
 
 struct MainTabView: View {
     @State private var selectedTab = 0
@@ -42,6 +42,15 @@ struct MainTabView: View {
                 Text("Help")
             }
             .tag(2)
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem {
+                Image(systemName: "gearshape.fill")
+                Text("Settings")
+            }
+            .tag(3)
         }
         .tint(EmoryTheme.primary)
         .onChange(of: selectedTab) { _, newTab in

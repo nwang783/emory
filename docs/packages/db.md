@@ -42,7 +42,7 @@ packages/db/src/
 | `UnknownSightingRepository` | `unknown-sighting.repository.ts` | Unknown face upserts, status transitions, `deleteOldSightings` |
 | `RelationshipRepository` | `relationship.repository.ts` | Links between people; **`findAll()`** for full graph loads |
 | `RetentionRepository` | `retention.repository.ts` | Read/upsert `retention_config` |
-| `ConversationRepository` | `conversation.repository.ts` | Recording CRUD + transcript/extraction updates, **`searchMemories`** / **`searchRecordings`** (filters + text search for memory query retrieval), person memories |
+| `ConversationRepository` | `conversation.repository.ts` | Recording CRUD + transcript/extraction updates, **`searchMemories`** / **`searchRecordings`** (filters + text search for memory query retrieval), person memories, **`getRelationshipMemoriesForPersonIds`** (all graph `relationship` rows for those people), **`upsertMemoryForGraphRelationship`** / **`deleteMemoriesByRelationshipId`** (Connections → memory sync, schema v7) |
 
 ## Schema
 
@@ -68,6 +68,8 @@ Core person records.
 | `first_met` | TEXT | |
 | `last_seen` | TEXT | |
 | `created_at` | TEXT | NOT NULL (ISO 8601) |
+
+**Product note (desktop):** The Connections graph is the place to set **how you know someone** — that data is stored on **`relationships`** (`relationship_type`, `notes`). The `people.relationship` and `people.notes` columns remain in the schema for backward compatibility and merges; the Camera / People UI does not edit them. See [Connections graph](../apps/connections-graph.md).
 
 #### `face_embeddings`
 Face embedding vectors (ArcFace output length **512** floats) stored as BLOBs (`Float32Array`).
@@ -276,6 +278,38 @@ Short memory lines derived from transcripts (populated by desktop **`MemoryExtra
 
 `PeopleRepository.mergePeople` reparents **`conversation_recordings`** and **`person_memories`** from the merged person to the kept person (same pattern as `encounters`).
 
+### Version 7 (graph edge → person memory link)
+
+Migration `migrateToV7()` bumps **`CURRENT_SCHEMA_VERSION` to 7**.
+
+#### `person_memories` — new column
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `relationship_id` | TEXT | Nullable, FK → `relationships(id)` **ON DELETE CASCADE**. When set, this row is the canonical “memory mirror” of that graph edge (at most one row per relationship). |
+
+**Index:** partial unique index `idx_person_memories_relationship_id` on `relationship_id` where it is not null (supports SQLite `INSERT … ON CONFLICT` upserts).
+
+**Desktop behaviour:** when `db:relationships:create` or `db:relationships:update` runs and the edge touches the **`is_self`** person, the main process calls **`syncGraphRelationshipToMemory`** ([`apps/desktop/src/main/services/relationship-memory-sync.service.ts`](../../apps/desktop/src/main/services/relationship-memory-sync.service.ts)), which upserts a **`memory_type = relationship`** line on the *other* person so **`getMemoriesByPerson`**, Memory Browser, and **`MemoryQueryService`** all see it. **`db:relationships:delete`** clears any linked memory row first (redundant with CASCADE if foreign keys are on, but safe). The Connections UI is unchanged.
+
+### Version 8 (repair `conversation_recordings` columns)
+
+Migration `migrateToV8()` bumps **`CURRENT_SCHEMA_VERSION` to 8**.
+
+SQLite **`CREATE TABLE IF NOT EXISTS`** (used in v6) does **not** alter an existing table. If `conversation_recordings` was created earlier with fewer columns, the app could report errors such as missing **`extraction_status`**. V8 runs idempotent **`ALTER TABLE … ADD COLUMN`** (each wrapped in try/catch) for the transcript and extraction fields plus **`encounter_id`** / **`duration_ms`** so the table matches what **`ConversationRepository`** expects.
+
+### Version 9 (rebuild away legacy `conversation_recordings` columns)
+
+**`migrateToV9()`** runs **after** the main migration transaction (so **`PRAGMA foreign_keys`** can be toggled for **`DROP TABLE`**). (The live **`CURRENT_SCHEMA_VERSION`** in code may be higher; see newer sections below.)
+
+Some databases still had an **older** row shape (`parse_status`, `transcript_text`, `source_type`, …). V8 **added** the new columns but **did not remove** legacy **`NOT NULL`** columns, so **`INSERT`** statements that only set the current column list failed (e.g. **`NOT NULL constraint failed: parse_status`**). When those legacy column names are detected, v9 **rebuilds** `conversation_recordings` into the canonical v6 layout (copying data with **`transcript_raw_text` ← `transcript_text`**, **`transcript_status` ← `parse_status`**, **`transcript_provider` ← `source_type`** when the new names are absent), then recreates indexes. Recording **ids** are unchanged so **`person_memories.recording_id`** stays valid.
+
+### Version 10 (repair `person_memories` shape)
+
+`CURRENT_SCHEMA_VERSION` is **10**. **`migrateToV10()`** runs after **`migrateToV9()`** (same **foreign_keys** pattern).
+
+The Connections / graph work **only added** **`relationship_id`** on **`person_memories`** (v7); it did **not** remove any columns. Errors like **no column `memory_type`** or **`source_quote`** happen when **`person_memories` already existed** from an older partial schema: **`CREATE TABLE IF NOT EXISTS`** (v6) skipped creating the full table, and v7 only **`ALTER`**-added **`relationship_id`**. v10 **rebuilds** **`person_memories`** when any canonical v6 column is missing, mapping common legacy names (**`text` → `memory_text`**, **`type` / `kind` → `memory_type`**, **`quote` → `source_quote`**, …). If the table already matches v6 + optional **`relationship_id`**, v10 only ensures **`relationship_id`** / its index and bumps the version.
+
 ## Usage
 
 ```typescript
@@ -340,7 +374,7 @@ The adapter uses a simple versioned migration system:
 2. Applies all migrations above the current version inside a transaction
 3. Each migration bumps the version number
 
-Each migration method (e.g. `migrateToV2()`, `migrateToV3()`, `migrateToV4()`) is idempotent — `CREATE TABLE IF NOT EXISTS` and try/catch around `ALTER TABLE` ensure safe re-runs. **V3** adds `thumbnail` and `quality_score` on `face_embeddings`. **V4** adds the indexes listed above. **V6** adds `conversation_recordings` and `person_memories` (see [Version 6](#version-6-conversation-recordings--memories)).
+Each migration method (e.g. `migrateToV2()`, `migrateToV3()`, `migrateToV4()`) is idempotent — `CREATE TABLE IF NOT EXISTS` and try/catch around `ALTER TABLE` ensure safe re-runs. **V3** adds `thumbnail` and `quality_score` on `face_embeddings`. **V4** adds the indexes listed above. **V6** adds `conversation_recordings` and `person_memories` (see [Version 6](#version-6-conversation-recordings--memories)). **V7** adds `person_memories.relationship_id` and the partial unique index (see [Version 7](#version-7-graph-edge--person-memory-link)). **V8** repairs missing columns on `conversation_recordings` (see [Version 8](#version-8-repair-conversation_recordings-columns)). **V9** rebuilds `conversation_recordings` when legacy column names are still present (see [Version 9](#version-9-rebuild-away-legacy-conversation_recordings-columns)). **V10** rebuilds or finalizes `person_memories` when the v6 column set is incomplete (see [Version 10](#version-10-repair-person_memories-shape)).
 
 ## Merge behaviour
 

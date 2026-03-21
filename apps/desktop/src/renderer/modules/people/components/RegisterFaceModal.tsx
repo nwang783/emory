@@ -14,7 +14,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 
 type RegisterFaceModalProps = {
@@ -44,8 +43,6 @@ export function RegisterFaceModal({
   onOpenChange,
 }: RegisterFaceModalProps): React.JSX.Element {
   const [name, setName] = useState('')
-  const [relationship, setRelationship] = useState('')
-  const [notes, setNotes] = useState('')
   const [viewfinder, setViewfinder] = useState<ViewfinderState>({ phase: 'live' })
   const [streamReady, setStreamReady] = useState(false)
 
@@ -91,8 +88,6 @@ export function RegisterFaceModal({
 
   function resetForm(): void {
     setName('')
-    setRelationship('')
-    setNotes('')
     setViewfinder({ phase: 'live' })
   }
 
@@ -176,8 +171,6 @@ export function RegisterFaceModal({
     try {
       const person = await addPerson({
         name: name.trim(),
-        relationship: relationship.trim() || undefined,
-        notes: notes.trim() || undefined,
       })
 
       const result = await window.emoryApi.face.register(
@@ -243,14 +236,24 @@ export function RegisterFaceModal({
         <DialogHeader>
           <DialogTitle>Register New Person</DialogTitle>
           <DialogDescription>
-            Position your face in the viewfinder and take a photo to register.
+            Position your face in the viewfinder and take a photo to register. After registering, add how you know them
+            in the Connections tab.
           </DialogDescription>
         </DialogHeader>
 
         {/* Live viewfinder */}
         <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
           {!streamReady && viewfinder.phase === 'live' && (
-            <Skeleton className="absolute inset-0 rounded-lg" />
+            <>
+              <Skeleton className="absolute inset-0 rounded-lg" />
+              <div className="absolute inset-0 z-10 flex items-center justify-center px-4 text-center">
+                <p className="max-w-sm text-sm text-white/85">
+                  Live capture needs the <strong className="font-medium">computer camera</strong> running on the
+                  Camera tab. Remote phone/glasses feed does not share a stream here — use upload, or switch to
+                  &quot;Use computer camera&quot; and start the camera.
+                </p>
+              </div>
+            </>
           )}
 
           <video
@@ -343,26 +346,6 @@ export function RegisterFaceModal({
               onChange={(e) => setName(e.target.value)}
               placeholder="John Smith"
             />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="register-relationship">Relationship</Label>
-              <Input
-                id="register-relationship"
-                value={relationship}
-                onChange={(e) => setRelationship(e.target.value)}
-                placeholder="Family, Friend..."
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="register-notes">Notes</Label>
-              <Input
-                id="register-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Details..."
-              />
-            </div>
           </div>
         </fieldset>
 

@@ -1,11 +1,23 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import { LayoutDashboard, UserRound, UserX } from 'lucide-react'
 import { SummaryCards } from './SummaryCards'
 import { FrequentVisitors } from './FrequentVisitors'
 import { RecentEncounters } from './RecentEncounters'
 import { UnknownSightings } from './UnknownSightings'
 import type { AnalyticsPerson, AnalyticsEncounter, AnalyticsUnknown, FrequentVisitor } from '../types'
+import {
+  buildGraphEdgesToSelf,
+  formatGraphEdgeLabel,
+  type RelationshipEndpointRow,
+} from '@/shared/lib/graph-relationship-labels'
+import {
+  MiniSidebarNav,
+  type MiniSidebarNavItem,
+  PageHeader,
+  PageScroll,
+  PageShell,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 
 const SEVEN_DAYS_MS = 7 * 86_400_000
 const THIRTY_DAYS_MS = 30 * 86_400_000
@@ -13,6 +25,7 @@ const THIRTY_DAYS_MS = 30 * 86_400_000
 function computeFrequentVisitors(
   encounters: AnalyticsEncounter[],
   people: AnalyticsPerson[],
+  graphLabelByPersonId: Record<string, string>,
 ): FrequentVisitor[] {
   const cutoff = Date.now() - THIRTY_DAYS_MS
   const recentEncounters = encounters.filter((e) => new Date(e.startedAt).getTime() > cutoff)
@@ -30,7 +43,7 @@ function computeFrequentVisitors(
       return {
         personId,
         name: person?.name ?? 'Unknown',
-        relationship: person?.relationship ?? null,
+        relationship: graphLabelByPersonId[personId] ?? null,
         encounterCount: count,
         lastSeen: person?.lastSeen ?? null,
       }
@@ -39,23 +52,41 @@ function computeFrequentVisitors(
     .slice(0, 10)
 }
 
+type AnalyticsSection = 'summary' | 'relations' | 'unknowns'
+
+const ANALYTICS_NAV: MiniSidebarNavItem[] = [
+  { id: 'summary', label: 'Overview', icon: LayoutDashboard },
+  { id: 'relations', label: 'People', icon: UserRound },
+  { id: 'unknowns', label: 'Unknowns', icon: UserX },
+]
+
 export function AnalyticsDashboard(): React.JSX.Element {
+  const [section, setSection] = useState<AnalyticsSection>('summary')
   const [people, setPeople] = useState<AnalyticsPerson[]>([])
   const [encounters, setEncounters] = useState<AnalyticsEncounter[]>([])
   const [unknowns, setUnknowns] = useState<AnalyticsUnknown[]>([])
+  const [graphLabelByPersonId, setGraphLabelByPersonId] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load(): Promise<void> {
       try {
-        const [p, e, u] = await Promise.all([
+        const [p, e, u, self, rels] = await Promise.all([
           window.emoryApi.db.people.findAll(),
           window.emoryApi.encounter.getRecent(1000),
           window.emoryApi.unknown.getAll(50),
+          window.emoryApi.db.people.getSelf(),
+          window.emoryApi.db.relationships.getAll(),
         ])
         setPeople(p as AnalyticsPerson[])
         setEncounters(e as AnalyticsEncounter[])
         setUnknowns(u as AnalyticsUnknown[])
+        const edges = buildGraphEdgesToSelf(self as { id: string } | null, rels as RelationshipEndpointRow[])
+        const labels: Record<string, string> = {}
+        for (const [pid, edge] of Object.entries(edges)) {
+          labels[pid] = formatGraphEdgeLabel(edge)
+        }
+        setGraphLabelByPersonId(labels)
       } catch {
         // Analytics load failed
       } finally {
@@ -76,37 +107,56 @@ export function AnalyticsDashboard(): React.JSX.Element {
   )
 
   const frequentVisitors = useMemo(
-    () => computeFrequentVisitors(encounters, people),
-    [encounters, people],
+    () => computeFrequentVisitors(encounters, people, graphLabelByPersonId),
+    [encounters, people, graphLabelByPersonId],
   )
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="px-6 pt-6 pb-2">
-        <h2 className="text-lg font-semibold tracking-tight">Analytics</h2>
-        <p className="text-xs text-muted-foreground">Overview of recognition activity and sightings</p>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="Analytics"
+        description="Encounters, frequent visitors, and unknown sightings."
+      />
 
-      <Separator />
-
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-5 px-6 py-5">
-          <SummaryCards
-            totalPeople={people.length}
-            totalEncounters={encounters.length}
-            recentEncounters={recentSevenDays}
-            activeUnknowns={activeUnknowns}
-            loading={loading}
+      <PageWorkspace
+        miniSidebar={
+          <MiniSidebarNav
+            label="Views"
+            items={ANALYTICS_NAV}
+            activeId={section}
+            onSelect={(id) => setSection(id as AnalyticsSection)}
           />
+        }
+      >
+        <PageScroll maxWidth="7xl" innerClassName="flex flex-col gap-8 pb-8">
+          {section === 'summary' ? (
+            <>
+              <SummaryCards
+                totalPeople={people.length}
+                totalEncounters={encounters.length}
+                recentEncounters={recentSevenDays}
+                activeUnknowns={activeUnknowns}
+                loading={loading}
+              />
+              <div className="grid gap-6 lg:grid-cols-2">
+                <FrequentVisitors visitors={frequentVisitors} loading={loading} />
+                <RecentEncounters encounters={encounters} loading={loading} />
+              </div>
+            </>
+          ) : null}
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <FrequentVisitors visitors={frequentVisitors} loading={loading} />
-            <RecentEncounters encounters={encounters} loading={loading} />
-          </div>
+          {section === 'relations' ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <FrequentVisitors visitors={frequentVisitors} loading={loading} />
+              <RecentEncounters encounters={encounters} loading={loading} />
+            </div>
+          ) : null}
 
-          <UnknownSightings sightings={unknowns} loading={loading} />
-        </div>
-      </ScrollArea>
-    </section>
+          {section === 'unknowns' ? (
+            <UnknownSightings sightings={unknowns} loading={loading} />
+          ) : null}
+        </PageScroll>
+      </PageWorkspace>
+    </PageShell>
   )
 }

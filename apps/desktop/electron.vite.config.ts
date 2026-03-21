@@ -9,7 +9,7 @@ export default defineConfig({
       externalizeDepsPlugin({
         // Bundle dotenv: when it stays external, Node resolves from `out/main/` and often
         // misses hoisted workspace `node_modules` (ERR_MODULE_NOT_FOUND).
-        exclude: ['@emory/core', '@emory/db', 'dotenv'],
+        exclude: ['@emory/core', '@emory/db', '@emory/ingest-protocol', 'dotenv'],
       }),
     ],
     build: {
@@ -37,6 +37,7 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve('src/renderer'),
+        '@emory/ingest-protocol': resolve('../../packages/ingest-protocol/src/index.ts'),
       },
     },
     plugins: [react(), tailwindcss()],

@@ -315,7 +315,8 @@ describe('ConversationRepository', () => {
         'idx_conversation_recordings_person_recorded_at',
         'idx_person_memories_person_id',
         'idx_person_memories_memory_date',
-        'idx_person_memories_person_memory_date'
+        'idx_person_memories_person_memory_date',
+        'idx_person_memories_relationship_id'
       )
       ORDER BY name
     `).all() as Array<{ name: string }>
@@ -328,6 +329,7 @@ describe('ConversationRepository', () => {
       'idx_person_memories_memory_date',
       'idx_person_memories_person_id',
       'idx_person_memories_person_memory_date',
+      'idx_person_memories_relationship_id',
     ])
   })
 
@@ -512,6 +514,53 @@ describe('ConversationRepository', () => {
     expect(memories).toHaveLength(1)
     expect(memories[0].memoryText).toContain('physical therapy')
     expect(memories[0].recordingId).toBe(recording.id)
+    expect(memories[0].relationshipId).toBeNull()
+  })
+
+  it('upserts graph relationship memory by relationship_id', () => {
+    const me = peopleRepo.create({ name: 'Alex' })
+    const other = peopleRepo.create({ name: 'Yiddy' })
+    peopleRepo.setSelfPerson(me.id)
+    const relRepo = new RelationshipRepository(adapter)
+    const rel = relRepo.create(me.id, other.id, 'friend')
+
+    const first = conversationRepo.upsertMemoryForGraphRelationship({
+      relationshipId: rel.id,
+      personId: other.id,
+      memoryText: 'Alex is my friend.',
+      memoryDate: '2026-01-01T00:00:00.000Z',
+    })
+    expect(first.relationshipId).toBe(rel.id)
+    expect(first.personId).toBe(other.id)
+    expect(first.memoryType).toBe('relationship')
+    expect(first.recordingId).toBeNull()
+
+    const second = conversationRepo.upsertMemoryForGraphRelationship({
+      relationshipId: rel.id,
+      personId: other.id,
+      memoryText: 'Alex is my colleague.',
+      memoryDate: '2026-06-01T00:00:00.000Z',
+    })
+    expect(second.id).toBe(first.id)
+    expect(second.memoryText).toBe('Alex is my colleague.')
+    expect(conversationRepo.getMemoriesByPerson(other.id, 10)).toHaveLength(1)
+  })
+
+  it('deleteMemoriesByRelationshipId removes linked memory', () => {
+    const me = peopleRepo.create({ name: 'Alex' })
+    const other = peopleRepo.create({ name: 'Yiddy' })
+    peopleRepo.setSelfPerson(me.id)
+    const relRepo = new RelationshipRepository(adapter)
+    const rel = relRepo.create(me.id, other.id, 'friend')
+
+    conversationRepo.upsertMemoryForGraphRelationship({
+      relationshipId: rel.id,
+      personId: other.id,
+      memoryText: 'Alex is my friend.',
+      memoryDate: '2026-01-01T00:00:00.000Z',
+    })
+    expect(conversationRepo.deleteMemoriesByRelationshipId(rel.id)).toBe(1)
+    expect(conversationRepo.getMemoriesByPerson(other.id, 10)).toHaveLength(0)
   })
 
   it('gets recordings by person newest first', () => {

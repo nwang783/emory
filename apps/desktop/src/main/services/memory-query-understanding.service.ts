@@ -158,6 +158,7 @@ export class MemoryQueryUnderstandingService {
               'The app wearer may ask about a person, about their own day, or about recent memories.',
               'If the question is about what the wearer did, set personScope to self.',
               'If the question names another person, set personScope to other and fill personName.',
+              'For questions about how someone relates to the wearer (relationship to me, are they my friend, family, carer), set personScope to other and personName to that other person\'s name; include searchTerms like relationship, friend, family if helpful.',
               'If a time is stated, resolve it to ISO timestamps in startAt and endAt using askedAt as the reference clock.',
               'Use a narrow window for specific times, usually around one hour unless the question implies a larger span like this morning or today.',
               'Put only useful retrieval keywords into searchTerms.',

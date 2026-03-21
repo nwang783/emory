@@ -48,10 +48,13 @@ Host: {host}
 {
   "ok": true,
   "service": "emory-ingest",
-  "protoVersion": 1,
+  "protoVersion": 3,
   "instanceId": "uuid-string",
   "friendlyName": "Emory home",
-  "signalingPort": 18763
+  "signalingPort": 18763,
+  "wsIngestPath": "/ingest",
+  "wsSignalingPath": "/signaling",
+  "advertisedAddresses": ["100.x.y.z", "192.168.1.42"]
 }
 ```
 
@@ -59,7 +62,10 @@ Host: {host}
 |-------|------|------------|
 | `ok` | boolean | Must be `true` |
 | `service` | string | Expect `"emory-ingest"` |
-| `protoVersion` | number | **1** today; if newer, decide whether to proceed or show “update app” |
+| `protoVersion` | number | **3** = health + JPEG `/ingest` + WebRTC signaling path advertised. **2** = WS ingest only. **1** = health only. If newer, decide whether to proceed or show “update app” |
+| `wsIngestPath` | string (optional) | WebSocket path on **same TCP port** as HTTP (e.g. `/ingest`) |
+| `wsSignalingPath` | string (optional) | WebSocket path for **JSON** WebRTC signaling (e.g. `/signaling`); same TCP port |
+| `advertisedAddresses` | string[] (optional) | IPv4s to try for HTTP/WS (tailnet-first when desktop uses **Tailscale + LAN**); fall back to manual host if absent |
 | `instanceId` | string | Stable server identity; dedupe discovery list |
 | `friendlyName` | string | Display label |
 | `signalingPort` | number | Should match requested port; use for later WSS on same port unless spec changes |
@@ -89,12 +95,15 @@ When the desktop has **UDP discovery beacon** enabled, it periodically sends **U
 ```json
 {
   "service": "emory-ingest",
-  "protoVersion": 1,
+  "protoVersion": 3,
   "instanceId": "…",
   "friendlyName": "Emory home",
   "signalingPort": 18763,
   "httpHealthPath": "/health",
-  "bindHostAdvertised": "100.x.y.z"
+  "wsIngestPath": "/ingest",
+  "wsSignalingPath": "/signaling",
+  "bindHostAdvertised": "100.x.y.z",
+  "advertisedAddresses": ["100.x.y.z", "192.168.1.42"]
 }
 ```
 
@@ -123,22 +132,34 @@ Desktop **Copy connection details** (Settings) pastes URLs like `http://100.x.y.
 
 ---
 
-## Phase 1+ — Not implemented on desktop yet (contract placeholders)
+## Phase 1 — WebSocket video ingest (implemented on desktop)
 
-Coordinate with desktop changes before relying on these in production.
+- **URL:** `ws://{host}:{signalingPort}/ingest` — same port as `GET /health`.
+- **Publisher (phone):** connect without `role` or with `?role=publisher`. Send **binary** messages: **`MSG_VIDEO_FRAME`** (JPEG + JSON metadata header) per [`@emory/ingest-protocol`](../../packages/ingest-protocol/) (aligned with `apps/bridge-server`).
+- **Viewer:** desktop Camera tab uses `?role=viewer`; the server relays publisher frames to all viewers.
+- **Security:** still **tailnet / trusted LAN** only until pairing exists.
 
-### WebSocket signaling (planned)
+### WebRTC signaling (implemented on desktop — **mobile must implement publisher**)
 
-- **WSS** `wss://{host}:{port}/signaling` (path TBD) — JSON messages for SDP/ICE, pairing.
-- **Pairing:** short code or QR → **session token** → `Authorization: Bearer …` on WSS.
+For **lower latency** than JPEG-over-`/ingest`, the desktop Camera tab (when **Settings → Prefer WebRTC video** is on) connects as **signaling role `desktop`** and expects the phone to be **`mobile`**.
 
-### WebRTC (planned)
+- **URL:** `ws://{host}:{signalingPort}{wsSignalingPath}?role=mobile` — e.g. `ws://100.x.y.z:18763/signaling?role=mobile`.
+- **Wire format:** UTF-8 **JSON** messages (one object per WebSocket message), max size enforced on server (~512 KB).
+- **Roles:** `?role=desktop` vs `?role=mobile` (anything other than `desktop` is treated as mobile). **One connection per role**; a new connection for the same role replaces the previous.
 
-- **Phone** publishes **video + audio** tracks; **PC** is **receiver**.
-- Likely **one `RTCPeerConnection`**, **Data Channel** for PC → phone cues.
-- Native stack: **Google WebRTC** (Swift package) or vendor SDK; **Electron** side needs a **native WebRTC** peer (separate task).
+**Message types** (mirror desktop [`useRemoteIngestWebRtc.ts`](../../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts)):
 
-When desktop ships signaling, update this doc with **message schemas** and **state machine** (connecting → paired → streaming → reconnect).
+| `type` | Direction | Payload | Notes |
+|--------|-----------|---------|--------|
+| `offer` | mobile → desktop | `{ "type": "offer", "sdp": "<string>" }` | **Phone creates the offer** (includes video `sendonly` or equivalent). Desktop sets remote description and replies with `answer`. |
+| `answer` | desktop → mobile | `{ "type": "answer", "sdp": "<string>" }` | Response to `offer`. |
+| `ice` | both | `{ "type": "ice", "candidate": RTCIceCandidateInit \| null }` | Trickle ICE; `candidate: null` marks end-of-candidates if you use that pattern. |
+
+**STUN:** Desktop uses `stun:stun.l.google.com:19302`. Phone should use compatible ICE servers for tailnet/LAN.
+
+**Fallback:** If WebRTC is disabled on desktop or not implemented on phone, use **JPEG `/ingest`** as publisher (Phase 1 above).
+
+**Encoding for real-time video (publisher-side):** see [remote-ingest-webrtc-encoding.md](./remote-ingest-webrtc-encoding.md) — H.264 preference, bitrate/FPS/GOP, and ICE notes.
 
 ---
 
@@ -149,7 +170,7 @@ Place new code under `emory/emory/` to match existing structure:
 ```
 emory/emory/
 ├── Services/
-│   └── DesktopIngestClient.swift      # health check, future WSS
+│   └── DesktopIngestClient.swift      # health, WS /ingest (JPEG), WebRTC + /signaling
 │   └── DesktopDiscoveryService.swift  # UDP multicast listener (optional)
 ├── Models/
 │   └── DesktopIngestEndpoint.swift    # host, port, Codable health DTO
@@ -157,7 +178,7 @@ emory/emory/
     └── DesktopConnectView.swift       # manual + discovered list UI
 ```
 
-Keep **Meta wearables** pipeline (`StreamViewModel`, `RealMetaWearablesService`) separate: **desktop connection** decides *where to send* encoded streams once WebRTC exists; today it only *validates* the path via `/health`.
+Keep **Meta wearables** pipeline (`StreamViewModel`, `RealMetaWearablesService`) separate: **desktop connection** sends either **WebRTC** (preferred when desktop has WebRTC on) or **JPEG `/ingest`**; `/health` validates reachability and advertises paths.
 
 ---
 
@@ -178,6 +199,7 @@ Keep **Meta wearables** pipeline (`StreamViewModel`, `RealMetaWearablesService`)
 
 - [remote-ingest-tailscale.md](./remote-ingest-tailscale.md) — server topology, bind modes, persistence file name.
 - [remote-discovery.md](./remote-discovery.md) — beacon packet format.
+- [remote-camera-desktop-plan.md](./remote-camera-desktop-plan.md) — **desktop UI + ingest server:** show phone/Ray-Ban feed in Camera tab when ingest is on (WS + JPEG v1, WebRTC later).
 - [conversation-recording.md](./conversation-recording.md) — end state: remote audio should feed the same pipeline as local mic (future).
 
 ## Changelog

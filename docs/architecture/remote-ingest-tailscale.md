@@ -6,27 +6,34 @@ This document describes how the **Electron desktop app** exposes a **remote inge
 
 | Piece | Status |
 |-------|--------|
-| **HTTP `GET /health`** on configurable TCP port | Implemented (Phase 0) |
+| **HTTP `GET /health`** on configurable TCP port | Implemented (`protoVersion` **3**; optional **`advertisedAddresses`**) |
+| **HTTP upgrade → WebSocket `/ingest`** — publisher → viewers (binary relay) | Implemented |
+| **HTTP upgrade → WebSocket `/signaling`** — JSON WebRTC signaling (`?role=desktop` \| `mobile`) | Implemented |
 | **Persisted settings** (`remote-ingest-config.json` in app userData) | Implemented |
-| **Settings UI** (bind mode, port, beacon, friendly name) | Implemented |
-| **WSS / WebRTC signaling** | Planned |
+| **Settings UI** (bind mode, port, beacon, friendly name, **Prefer WebRTC video**) | Implemented |
+| **Camera tab** remote viewer (`?role=viewer` on `/ingest`) or WebRTC (`/signaling?role=desktop`) | Implemented |
+| **WebRTC on iOS** | Phone app must publish offer + ICE; see [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) |
 | **Pairing + session tokens** | Planned |
 
 ## Topology
 
 1. **Tailscale** on iPhone and PC — same tailnet, devices get `100.x` addresses (and optional MagicDNS names).
-2. **Emory desktop** enables **Remote ingest** in **Settings** and listens on a **TCP port** (default **18763**).
-3. **Bind modes**
-   - **Tailscale (100.x) only** — binds to the first IPv4 address in `100.0.0.0/8` found on the machine. Fails gracefully with an error if Tailscale is not connected.
-   - **All interfaces (`0.0.0.0`)** — listens everywhere; **use strict Tailscale ACLs** so only trusted peers can reach the port. Windows may show a **Firewall** prompt.
+2. **Same Wi‑Fi LAN** — phone and PC can also use private IPv4 (e.g. `192.168.x.x`) when the listener accepts those interfaces.
+3. **Emory desktop** enables **Remote ingest** in **Settings** and listens on a **TCP port** (default **18763**).
+4. **Bind modes**
+   - **Tailscale + local LAN (default)** — listens on **`0.0.0.0`** (all IPv4 interfaces). Status, **Copy connection details**, **`GET /health`**, and the UDP beacon list **`advertisedAddresses`** with **100.x first**, then other NICs (Wi‑Fi/Ethernet). Use when you want **either** tailnet **or** home LAN clients.
+   - **Tailscale (100.x) only** — binds only to the first `100.x` address. Fails if Tailscale is not connected. Does **not** accept direct `192.168.x` connections to another NIC.
+   - **All interfaces (`0.0.0.0`)** — same listen behavior as Tailscale + LAN; **address list** follows OS NIC order (not tailnet-first). Prefer **Tailscale + LAN** when you care about ordering.
    - **Loopback** — `127.0.0.1` for local development.
 
 ## HTTP API (Phase 0)
 
-- **`GET /health`** — JSON: `{ ok, service, protoVersion, instanceId, friendlyName, signalingPort }`.
-- **`GET /`** — short plain-text pointer to `/health`.
+- **`GET /health`** — JSON: `{ ok, service, protoVersion, instanceId, friendlyName, signalingPort, wsIngestPath, wsSignalingPath, advertisedAddresses? }`. **`advertisedAddresses`**: string array of IPv4s the client may try (order matches bind mode; tailnet-first when **Tailscale + LAN**).
+- **`GET /`** — short plain-text pointer to `/health`, `/ingest`, and `/signaling`.
+- **`WS /ingest`** — same TCP port; **`?role=viewer`** (desktop) or publisher (default / `?role=publisher`). Relay only; see [remote-camera-desktop-plan.md](./remote-camera-desktop-plan.md).
+- **`WS /signaling`** — same TCP port; UTF-8 JSON (`offer` / `answer` / `ice`). **`?role=desktop`** (Electron renderer) vs **`?role=mobile`** (phone). See [ios-remote-ingest-client.md](./ios-remote-ingest-client.md).
 
-No authentication on `/health` yet; keep the port **tailnet-only** via ACLs until pairing ships.
+No authentication on `/health` yet. With **Tailscale + LAN** or **All interfaces**, the port is reachable on **local LAN** too — use **host firewall**, router isolation, or **Tailscale-only** bind mode if you need to avoid LAN exposure until pairing ships.
 
 ## Persistence
 
@@ -51,5 +58,6 @@ Fields mirror the Settings UI plus a stable **`instanceId`** for discovery dedup
 ## Related
 
 - [remote-discovery.md](./remote-discovery.md) — UDP multicast beacon.
-- [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) — **iOS app implementation guide** (health check, discovery, future signaling).
+- [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) — **iOS app implementation guide** (health check, discovery, signaling).
+- [remote-ingest-webrtc-encoding.md](./remote-ingest-webrtc-encoding.md) — **WebRTC publisher encoding** (FPS, bitrate, GOP) + desktop codec prefs.
 - [conversation-recording.md](./conversation-recording.md) — local mic pipeline (parity target for remote audio).

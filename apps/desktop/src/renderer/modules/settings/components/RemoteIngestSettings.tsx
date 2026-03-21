@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type BindMode = 'all' | 'loopback' | 'tailscale'
+type BindMode = 'all' | 'loopback' | 'tailscale' | 'tailscale_lan'
 
 type ConfigForm = {
   enabled: boolean
@@ -27,6 +27,7 @@ type ConfigForm = {
   beaconIntervalMs: number
   mdnsEnabled: boolean
   friendlyName: string
+  webrtcVideoPreferred: boolean
 }
 
 type StatusPayload = {
@@ -42,12 +43,13 @@ type StatusPayload = {
 
 const REMOTE_INGEST_FORM_DEFAULT: ConfigForm = {
   enabled: false,
-  bindMode: 'tailscale',
+  bindMode: 'tailscale_lan',
   signalingPort: 18763,
   beaconEnabled: true,
   beaconIntervalMs: 2000,
   mdnsEnabled: false,
   friendlyName: 'Emory home',
+  webrtcVideoPreferred: true,
 }
 
 export function RemoteIngestSettings(): React.JSX.Element {
@@ -68,6 +70,7 @@ export function RemoteIngestSettings(): React.JSX.Element {
       beaconIntervalMs: cfg.config.beaconIntervalMs,
       mdnsEnabled: cfg.config.mdnsEnabled,
       friendlyName: cfg.config.friendlyName,
+      webrtcVideoPreferred: cfg.config.webrtcVideoPreferred,
     })
     setInstanceId(cfg.instanceId)
     setStatus(st as StatusPayload)
@@ -93,6 +96,7 @@ export function RemoteIngestSettings(): React.JSX.Element {
         beaconIntervalMs: form.beaconIntervalMs,
         mdnsEnabled: form.mdnsEnabled,
         friendlyName: form.friendlyName,
+        webrtcVideoPreferred: form.webrtcVideoPreferred,
       })
       if (
         result &&
@@ -131,6 +135,16 @@ export function RemoteIngestSettings(): React.JSX.Element {
     for (const a of addrs) {
       lines.push(`  http://${a}:${port}/health`)
     }
+    lines.push('', 'Video ingest (WebSocket — same port):')
+    for (const a of addrs) {
+      lines.push(`  ws://${a}:${port}/ingest`)
+    }
+    lines.push('  Phone / glasses app: publisher (default). Desktop Camera: viewer (?role=viewer).')
+    lines.push('', 'WebRTC signaling (JSON text, same port):')
+    for (const a of addrs) {
+      lines.push(`  ws://${a}:${port}/signaling`)
+    }
+    lines.push('  Desktop: ?role=desktop. Phone: ?role=mobile. Phone sends offer; desktop answers.')
     if (status.tailscaleHint) {
       lines.push('')
       lines.push(`MagicDNS-style hint (verify in Tailscale admin): ${status.tailscaleHint}`)
@@ -172,9 +186,10 @@ export function RemoteIngestSettings(): React.JSX.Element {
               Remote ingest
             </CardTitle>
             <CardDescription className="text-xs">
-              Stream glasses video from your iPhone over Tailscale. The desktop acts as the processing hub
-              (face recognition, memories). WebRTC signaling will use this port in a later release; today:
-              HTTP health check only.
+              Stream glasses video from your phone over Tailscale: HTTP <code className="font-mono-ui">/health</code>,{' '}
+              WebSocket <code className="font-mono-ui">/ingest</code> (JPEG fallback), and{' '}
+              <code className="font-mono-ui">/signaling</code> for WebRTC (lower latency; default on via{' '}
+              <strong>Prefer WebRTC video</strong> below).
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -213,14 +228,31 @@ export function RemoteIngestSettings(): React.JSX.Element {
               Enable remote ingest server
             </Label>
             <p className="text-xs text-muted-foreground">
-              Opens the HTTP listener for health checks and (later) secure signaling. May trigger a Windows
-              Firewall prompt the first time you use &quot;All interfaces&quot;.
+              Opens HTTP + WebSocket on the chosen port. May trigger a Windows Firewall prompt the first time you
+              use &quot;All interfaces&quot;.
             </p>
           </div>
           <Switch
             id="remote-ingest-enabled"
             checked={form.enabled}
             onCheckedChange={(enabled) => setForm((f) => ({ ...f, enabled }))}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="remote-ingest-webrtc" className="text-sm">
+              Prefer WebRTC video (low latency)
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Camera uses <code className="font-mono-ui">/signaling</code> + WebRTC when on. Turn off to use JPEG-only{' '}
+              <code className="font-mono-ui">/ingest</code> (easier for simple clients).
+            </p>
+          </div>
+          <Switch
+            id="remote-ingest-webrtc"
+            checked={form.webrtcVideoPreferred}
+            onCheckedChange={(webrtcVideoPreferred) => setForm((f) => ({ ...f, webrtcVideoPreferred }))}
           />
         </div>
 
@@ -231,8 +263,10 @@ export function RemoteIngestSettings(): React.JSX.Element {
             Bind to
           </Label>
           <p className="text-xs text-muted-foreground">
-            <strong>Tailscale only</strong> uses your 100.x address (recommended). <strong>All interfaces</strong>{' '}
-            listens on every NIC — use with strict Tailscale ACLs.
+            <strong>Tailscale + local LAN</strong> listens on all interfaces but lists <strong>100.x first</strong>, then
+            Wi‑Fi/Ethernet IPs — same phone can use tailnet or home LAN. <strong>Tailscale only</strong> binds the
+            100.x NIC (strictest). <strong>All interfaces</strong> is the same listen address as Tailscale + LAN; use
+            either depending on whether you want tailnet-first address ordering in Copy / beacon.
           </p>
           <Select
             value={form.bindMode}
@@ -242,8 +276,9 @@ export function RemoteIngestSettings(): React.JSX.Element {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="tailscale_lan">Tailscale + local LAN (recommended)</SelectItem>
               <SelectItem value="tailscale">Tailscale (100.x) only</SelectItem>
-              <SelectItem value="all">All interfaces (0.0.0.0)</SelectItem>
+              <SelectItem value="all">All interfaces — flat address list</SelectItem>
               <SelectItem value="loopback">Loopback (127.0.0.1) — local dev</SelectItem>
             </SelectContent>
           </Select>

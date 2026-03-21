@@ -24,7 +24,7 @@ tmp/
 .env.local
 
 # AI Models (downloaded at runtime)
-models/
+/models/
 *.onnx
 *.bin
 
@@ -44,6 +44,9 @@ Thumbs.db
 .vscode/
 !.vscode/extensions.json
 .idea/
+
+# Agent skills / local tooling (e.g. gstack clone under .agents/skills/gstack — not committed)
+.agents/
 
 # Frame storage (local captured images)
 frames/

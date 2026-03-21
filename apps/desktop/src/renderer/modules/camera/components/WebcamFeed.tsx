@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Camera, CameraOff, GraduationCap, MessageSquareText } from 'lucide-react'
-import { useWebcam } from '../hooks/useWebcam'
+import { Camera, CameraOff, GraduationCap, MessageSquareText, MonitorSmartphone } from 'lucide-react'
+import { useCameraFeed } from '../hooks/useCameraFeed'
 import { useFaceStore } from '@/shared/stores/face.store'
 import { useSettingsStore } from '@/shared/stores/settings.store'
 import { useActivityStore } from '@/shared/stores/activity.store'
@@ -103,18 +103,45 @@ function matchDetectionsToTracks(
 }
 
 export function WebcamFeed(): React.JSX.Element {
-  const { videoRef, canvasRef, isActive, error, cameraLabel, start, stop, captureFrame } = useWebcam()
+  const {
+    mode,
+    preferLocalOverride,
+    setPreferLocalOverride,
+    remoteIngestAvailable,
+    remoteTransport,
+    feedReady,
+    isActive,
+    error,
+    cameraLabel,
+    remoteStatusHint,
+    start,
+    stop,
+    captureFrame,
+    frameWidth,
+    frameHeight,
+    videoRef,
+    canvasRef,
+    previewCanvasRef,
+    webRtcVideoRef,
+    webRtcCaptureCanvasRef,
+  } = useCameraFeed()
+
   const overlayRef = useRef<HTMLCanvasElement | null>(null)
   const rafIdRef = useRef<number | null>(null)
   const tracksRef = useRef<FaceTrack[]>([])
   const { phase: conversationPhase, error: conversationError, micLabel: conversationMicLabel } =
-    useConversationRecorder(isActive, tracksRef)
+    useConversationRecorder(feedReady, tracksRef)
   const detectInFlightRef = useRef(false)
   const identifyInFlightRef = useRef(false)
   const [autoLearnCount, setAutoLearnCount] = useState(0)
   const [showMemoryQueryPanel, setShowMemoryQueryPanel] = useState(false)
   const [identifiedPeople, setIdentifiedPeople] = useState<
-    Array<{ label: string; personId: string; similarity: number; relationship?: string | null }>
+    Array<{
+      label: string
+      personId: string
+      similarity: number
+      graphRelationshipTypeToSelf?: string | null
+    }>
   >([])
   const urgentIdentifyRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
@@ -132,8 +159,9 @@ export function WebcamFeed(): React.JSX.Element {
     if (identifyInFlightRef.current) return
     const frameData = captureFrame()
     if (!frameData) return
-    const video = videoRef.current
-    if (!video) return
+    const w = frameWidth
+    const h = frameHeight
+    if (w <= 0 || h <= 0) return
 
     const { autoLearnEnabled } = useSettingsStore.getState()
     const { addEvent, incrementAutoLearnCount } = useActivityStore.getState()
@@ -141,7 +169,7 @@ export function WebcamFeed(): React.JSX.Element {
     identifyInFlightRef.current = true
     setIsProcessing(true)
     try {
-      const result = await window.emoryApi.face.processFrame(frameData, video.videoWidth, video.videoHeight)
+      const result = await window.emoryApi.face.processFrame(frameData, w, h)
       setMatches(result.matches)
 
       const identDets = result.detections.map((d) => ({ bbox: d.bbox, score: d.score }))
@@ -250,7 +278,7 @@ export function WebcamFeed(): React.JSX.Element {
                 hasConsensus &&
                 now - track.lastAutoLearnAt > 15_000
               ) {
-                triggerAutoLearn(frameData, video.videoWidth, video.videoHeight, match.personId, track, matchMarginForLearn)
+                triggerAutoLearn(frameData, w, h, match.personId, track, matchMarginForLearn)
                   .then((learned) => {
                     if (learned) {
                       incrementAutoLearnCount()
@@ -276,16 +304,16 @@ export function WebcamFeed(): React.JSX.Element {
           }
         }
       }
-      const peopleState = usePeopleStore.getState().people
+      const { graphEdgeToSelfByPersonId } = usePeopleStore.getState()
       const identified = tracksRef.current
         .filter((t) => t.identity)
         .map((t) => {
-          const person = peopleState.find((p) => p.id === t.identity!.personId)
+          const edge = graphEdgeToSelfByPersonId[t.identity!.personId]
           return {
             label: t.identity!.label,
             personId: t.identity!.personId,
             similarity: t.identity!.similarity,
-            relationship: person?.relationship ?? null,
+            graphRelationshipTypeToSelf: edge?.relationshipType ?? null,
           }
         })
       setIdentifiedPeople(identified)
@@ -321,18 +349,19 @@ export function WebcamFeed(): React.JSX.Element {
       identifyInFlightRef.current = false
       setIsProcessing(false)
     }
-  }, [captureFrame, videoRef, setMatches, setIsProcessing])
+  }, [captureFrame, frameWidth, frameHeight, setMatches, setIsProcessing])
 
   const runDetection = useCallback(async () => {
     if (detectInFlightRef.current) return
     const frameData = captureFrame()
     if (!frameData) return
-    const video = videoRef.current
-    if (!video) return
+    const w = frameWidth
+    const h = frameHeight
+    if (w <= 0 || h <= 0) return
 
     detectInFlightRef.current = true
     try {
-      const result = await window.emoryApi.face.detectOnly(frameData, video.videoWidth, video.videoHeight)
+      const result = await window.emoryApi.face.detectOnly(frameData, w, h)
       setDetections(result.detections)
       setProcessingTimeMs(result.processingTimeMs)
 
@@ -393,18 +422,17 @@ export function WebcamFeed(): React.JSX.Element {
     } finally {
       detectInFlightRef.current = false
     }
-  }, [captureFrame, videoRef, setDetections, setFpsCount, setProcessingTimeMs])
+  }, [captureFrame, frameWidth, frameHeight, setDetections, setFpsCount, setProcessingTimeMs])
 
   const drawOverlay = useCallback(() => {
     const overlay = overlayRef.current
-    const video = videoRef.current
-    if (!overlay || !video) return
+    if (!overlay) return
 
     const ctx = overlay.getContext('2d')
     if (!ctx) return
 
-    const vw = video.videoWidth || 640
-    const vh = video.videoHeight || 480
+    const vw = frameWidth > 0 ? frameWidth : 640
+    const vh = frameHeight > 0 ? frameHeight : 480
 
     if (overlay.width !== vw) overlay.width = vw
     if (overlay.height !== vh) overlay.height = vh
@@ -476,10 +504,10 @@ export function WebcamFeed(): React.JSX.Element {
     }
 
     ctx.globalAlpha = 1
-  }, [videoRef])
+  }, [frameWidth, frameHeight])
 
   useEffect(() => {
-    if (!isActive) return
+    if (!feedReady) return
 
     let running = true
     const settings = useSettingsStore.getState()
@@ -522,14 +550,44 @@ export function WebcamFeed(): React.JSX.Element {
         sessionIdRef.current = null
       }
     }
-  }, [isActive, runDetection, runIdentification, drawOverlay])
+  }, [feedReady, runDetection, runIdentification, drawOverlay])
+
+  const switchToLocal = (): void => {
+    setPreferLocalOverride(true)
+    stop()
+  }
+
+  const switchToRemote = (): void => {
+    setPreferLocalOverride(false)
+    stop()
+  }
 
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center gap-4 overflow-y-auto p-4">
       <div className="relative overflow-hidden rounded-lg border border-border shadow-lg">
-        <video ref={videoRef} className="max-h-[calc(100vh-10rem)] bg-muted" muted playsInline />
+        {mode === 'remote' && remoteTransport === 'webrtc' ? (
+          <video
+            ref={webRtcVideoRef}
+            className="max-h-[calc(100vh-10rem)] bg-muted"
+            muted
+            playsInline
+            autoPlay
+            aria-label="Remote WebRTC camera preview"
+          />
+        ) : mode === 'remote' ? (
+          <canvas
+            ref={previewCanvasRef}
+            className="block max-h-[calc(100vh-10rem)] w-auto max-w-full bg-muted"
+            aria-label="Remote camera preview"
+          />
+        ) : (
+          <video ref={videoRef} className="max-h-[calc(100vh-10rem)] bg-muted" muted playsInline />
+        )}
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
-        <canvas ref={canvasRef} className="hidden" />
+        {mode === 'local' ? <canvas ref={canvasRef} className="hidden" /> : null}
+        {mode === 'remote' && remoteTransport === 'webrtc' ? (
+          <canvas ref={webRtcCaptureCanvasRef} className="hidden" />
+        ) : null}
 
         {isActive && autoLearnCount > 0 && (
           <div className="absolute top-3 right-3 z-10">
@@ -541,6 +599,17 @@ export function WebcamFeed(): React.JSX.Element {
         )}
       </div>
 
+      {mode === 'remote' && isActive && remotePhase === 'waiting_publisher' && (
+        <p className="max-w-md text-center text-sm text-muted-foreground" role="status">
+          Remote ingest connected — waiting for the phone app to publish video (
+          <code className="font-mono-ui text-xs">?role=publisher</code> or omit role on WebSocket).
+        </p>
+      )}
+      {mode === 'remote' && isActive && remotePhase === 'connecting' && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Connecting to remote ingest…
+        </p>
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       {conversationError && (
         <p className="text-sm text-destructive" role="status">
@@ -574,19 +643,35 @@ export function WebcamFeed(): React.JSX.Element {
 
       <div className="flex flex-wrap justify-center gap-3">
         {!isActive ? (
-          <Button onClick={start} size="lg">
+          <Button onClick={() => void start()} size="lg">
             <Camera />
-            Start Camera
+            {mode === 'remote' && remoteTransport === 'webrtc'
+              ? 'Start remote camera (WebRTC)'
+              : mode === 'remote'
+                ? 'Start remote camera (JPEG)'
+                : 'Start camera'}
           </Button>
         ) : (
           <>
             <Button variant="destructive" onClick={stop} size="lg">
               <CameraOff />
-              Stop Camera
+              Stop
             </Button>
             <WhoIsThisButton identifiedPeople={identifiedPeople} />
           </>
         )}
+        {remoteIngestAvailable && mode === 'remote' ? (
+          <Button type="button" variant="outline" size="lg" onClick={switchToLocal}>
+            <MonitorSmartphone className="h-4 w-4" />
+            Use computer camera
+          </Button>
+        ) : null}
+        {remoteIngestAvailable && preferLocalOverride ? (
+          <Button type="button" variant="outline" size="lg" onClick={switchToRemote}>
+            <MonitorSmartphone className="h-4 w-4" />
+            Use phone / glasses feed
+          </Button>
+        ) : null}
         <Button
           variant={showMemoryQueryPanel ? 'secondary' : 'outline'}
           size="lg"

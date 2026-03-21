@@ -21,12 +21,29 @@ import {
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { useSettingsStore } from '@/shared/stores/settings.store'
+import { usePeopleStore } from '@/shared/stores/people.store'
+import {
+  buildGraphEdgesToSelf,
+  formatGraphEdgeLabel,
+  type GraphEdgeToSelf,
+  type RelationshipEndpointRow,
+} from '@/shared/lib/graph-relationship-labels'
+import {
+  MiniSidebarPanel,
+  PageFill,
+  PageHeader,
+  PageShell,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 import { reachablePersonIdsFrom } from '../lib/ego-subgraph'
+import { RELATIONSHIP_TYPES, TYPE_COLOURS } from '../lib/graph-constants'
+import { GraphNodeEditDialog } from './GraphNodeEditDialog'
 
 type PersonNode = {
   id: string
   name: string
-  relationship: string | null
+  /** Edge to designated self — drives colour and subtitle (not `people.relationship`). */
+  graphEdgeToSelf: GraphEdgeToSelf | null
   isSelf: boolean
   x: number
   y: number
@@ -45,23 +62,6 @@ type RelationshipEdge = {
   notes: string | null
 }
 
-const TYPE_COLOURS: Record<string, string> = {
-  spouse: '#f43f5e',
-  child: '#fb923c',
-  parent: '#a78bfa',
-  sibling: '#34d399',
-  friend: '#60a5fa',
-  carer: '#fbbf24',
-  neighbour: '#94a3b8',
-  colleague: '#818cf8',
-  other: '#6b7280',
-}
-
-const RELATIONSHIP_TYPES = [
-  'spouse', 'child', 'parent', 'sibling', 'friend',
-  'carer', 'neighbour', 'colleague', 'other',
-] as const
-
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -71,15 +71,10 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-function getCategoryColour(relationship: string | null): string {
-  if (!relationship) return '#6b7280'
-  const lower = relationship.toLowerCase()
-  if (['wife', 'husband', 'spouse', 'partner'].some((r) => lower.includes(r))) return '#f43f5e'
-  if (['son', 'daughter', 'child', 'parent', 'mother', 'father', 'mum', 'dad'].some((r) => lower.includes(r))) return '#fb923c'
-  if (['brother', 'sister', 'sibling'].some((r) => lower.includes(r))) return '#34d399'
-  if (['friend'].some((r) => lower.includes(r))) return '#60a5fa'
-  if (['carer', 'nurse', 'doctor'].some((r) => lower.includes(r))) return '#fbbf24'
-  return '#94a3b8'
+function nodeColour(edge: GraphEdgeToSelf | null, isSelf: boolean): string {
+  if (isSelf) return '#94a3b8'
+  if (!edge) return '#6b7280'
+  return TYPE_COLOURS[edge.relationshipType] ?? '#6b7280'
 }
 
 export function ConnectionsGraph(): React.JSX.Element {
@@ -105,6 +100,11 @@ export function ConnectionsGraph(): React.JSX.Element {
   const [selfPersonId, setSelfPersonId] = useState<string | null>(null)
   const [needsSelfSetup, setNeedsSelfSetup] = useState(false)
   const [hasPeopleInDirectory, setHasPeopleInDirectory] = useState(false)
+  const [editTarget, setEditTarget] = useState<{
+    personId: string
+    name: string
+    isSelf: boolean
+  } | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -114,7 +114,7 @@ export function ConnectionsGraph(): React.JSX.Element {
         window.emoryApi.db.people.getSelf(),
       ])
 
-      const ppl = peopleData as Array<{ id: string; name: string; relationship: string | null }>
+      const ppl = peopleData as Array<{ id: string; name: string }>
       const rels = relData as Array<{
         id: string; personAId: string; personBId: string
         relationshipType: string; personAName: string; personBName: string; notes: string | null
@@ -148,6 +148,8 @@ export function ConnectionsGraph(): React.JSX.Element {
       setNeedsSelfSetup(false)
       setSelfPersonId(self.id)
 
+      const edgeToSelf = buildGraphEdgesToSelf(self, rels as RelationshipEndpointRow[])
+
       const visibleIds = reachablePersonIdsFrom(
         self.id,
         rels.map((r) => ({ personAId: r.personAId, personBId: r.personBId })),
@@ -175,11 +177,12 @@ export function ConnectionsGraph(): React.JSX.Element {
       const nodes: PersonNode[] = visiblePpl.map((p) => {
         const prev = existingPositions.get(p.id)
         const isSelfNode = p.id === self.id
+        const graphEdgeToSelf = isSelfNode ? null : (edgeToSelf[p.id] ?? null)
         if (prev) {
           return {
             id: p.id,
             name: p.name,
-            relationship: p.relationship,
+            graphEdgeToSelf,
             isSelf: isSelfNode,
             x: prev.x,
             y: prev.y,
@@ -192,7 +195,7 @@ export function ConnectionsGraph(): React.JSX.Element {
           return {
             id: p.id,
             name: p.name,
-            relationship: p.relationship,
+            graphEdgeToSelf: null,
             isSelf: true,
             x: cx,
             y: cy,
@@ -207,7 +210,7 @@ export function ConnectionsGraph(): React.JSX.Element {
         return {
           id: p.id,
           name: p.name,
-          relationship: p.relationship,
+          graphEdgeToSelf,
           isSelf: false,
           x: cx + Math.cos(angle) * ring,
           y: cy + Math.sin(angle) * ring,
@@ -376,7 +379,7 @@ export function ConnectionsGraph(): React.JSX.Element {
 
       const baseRadius = 20 + Math.min(node.connectionCount * 4, 16)
       const radius = isHovered ? baseRadius + 3 : baseRadius
-      const colour = getCategoryColour(node.relationship)
+      const colour = nodeColour(node.graphEdgeToSelf, node.isSelf)
 
       ctx.globalAlpha = dimmed ? 0.15 : 1
 
@@ -416,9 +419,9 @@ export function ConnectionsGraph(): React.JSX.Element {
         ctx.fillText('You', node.x, node.y + radius + subline)
         subline += 12
       }
-      if (node.relationship) {
+      if (node.graphEdgeToSelf) {
         ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.5)'
-        ctx.fillText(node.relationship, node.x, node.y + radius + subline)
+        ctx.fillText(formatGraphEdgeLabel(node.graphEdgeToSelf), node.x, node.y + radius + subline)
       }
     }
 
@@ -521,6 +524,7 @@ export function ConnectionsGraph(): React.JSX.Element {
         type: 'friend',
         notes: '',
       })
+      await usePeopleStore.getState().loadPeople()
       await loadData()
     } catch (err) {
       toast.error('Failed to add relationship', {
@@ -531,86 +535,116 @@ export function ConnectionsGraph(): React.JSX.Element {
 
   if (initialLoading) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-4">
-        <Skeleton className="h-64 w-64 rounded-full" />
-        <Skeleton className="h-5 w-40" />
-      </section>
+      <PageShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 py-12">
+          <Skeleton className="h-64 w-64 rounded-full" />
+          <Skeleton className="h-5 w-40" />
+        </div>
+      </PageShell>
     )
   }
 
   if (!hasPeopleInDirectory) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-3">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+      <PageShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">No people yet</p>
+            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+              Add people from the Camera or People tab to build a connection map.
+            </p>
+          </div>
         </div>
-        <p className="text-sm font-medium">No people registered yet</p>
-        <p className="text-xs text-muted-foreground">Add people from the Camera tab to see their connection web</p>
-      </section>
+      </PageShell>
     )
   }
 
   if (needsSelfSetup) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+      <PageShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <NetworkIcon className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div className="max-w-md space-y-2">
+            <p className="text-sm font-medium text-foreground">Mark who is you</p>
+            <p className="text-xs text-muted-foreground">
+              In People, edit your profile and enable{' '}
+              <span className="font-medium text-foreground">This is me</span>. The graph is built from you outward.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              useSettingsStore.getState().setActiveTab('people')
+            }}
+          >
+            Open People
+          </Button>
         </div>
-        <div className="max-w-sm space-y-2">
-          <p className="text-sm font-medium">Choose who is you</p>
-          <p className="text-xs text-muted-foreground">
-            Open People, edit a profile, and turn on <span className="font-medium text-foreground">This is me</span>.
-            Your connection web is built from you outward through relationships.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            useSettingsStore.getState().setActiveTab('people')
-          }}
-        >
-          Open People
-        </Button>
-      </section>
+      </PageShell>
     )
   }
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 pt-4 pb-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Connections</h2>
-          <p className="text-xs text-muted-foreground">
-            {nodeCount} in your network, {edgeCount} {edgeCount === 1 ? 'connection' : 'connections'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            {Object.entries(TYPE_COLOURS).map(([type, colour]) => (
-              <Badge key={type} variant="outline" className="gap-1 text-[9px]">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: colour }} />
-                {type}
-              </Badge>
-            ))}
-          </div>
+    <PageShell>
+      <PageHeader
+        title="Connections"
+        description={`${nodeCount} people · ${edgeCount} ${edgeCount === 1 ? 'link' : 'links'}. Double-click a person to edit name, connections, or remove them.`}
+        actions={
           <Button size="sm" onClick={() => setShowAddDialog(true)}>
             <Plus className="h-4 w-4" />
-            Add
+            Add relationship
           </Button>
-        </div>
-      </div>
+        }
+      />
 
-      <div ref={containerRef} className="relative flex-1 overflow-hidden border-t border-border">
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
-        />
-      </div>
+      <PageWorkspace
+        miniSidebar={
+          <MiniSidebarPanel label="Legend" position="end">
+            <div className="flex flex-col gap-1.5">
+              {Object.entries(TYPE_COLOURS).map(([type, colour]) => (
+                <Badge
+                  key={type}
+                  variant="outline"
+                  className="justify-start gap-2 py-1 text-[10px] font-normal"
+                >
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: colour }}
+                  />
+                  <span className="truncate">{type}</span>
+                </Badge>
+              ))}
+            </div>
+            <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+              Drag nodes to arrange. Double-click a person to edit. Scroll to zoom. Drag the canvas to pan.
+            </p>
+          </MiniSidebarPanel>
+        }
+      >
+        <PageFill>
+          <div ref={containerRef} className="relative h-full w-full">
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 cursor-grab active:cursor-grabbing"
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+              onDoubleClick={(e) => {
+                const node = findNodeAt(e.clientX, e.clientY)
+                if (!node) return
+                setEditTarget({ personId: node.id, name: node.name, isSelf: node.isSelf })
+              }}
+            />
+          </div>
+        </PageFill>
+      </PageWorkspace>
 
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-md">
@@ -671,6 +705,17 @@ export function ConnectionsGraph(): React.JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+
+      <GraphNodeEditDialog
+        personId={editTarget?.personId ?? null}
+        personName={editTarget?.name ?? ''}
+        isSelf={editTarget?.isSelf ?? false}
+        open={editTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setEditTarget(null)
+        }}
+        onGraphChanged={loadData}
+      />
+    </PageShell>
   )
 }

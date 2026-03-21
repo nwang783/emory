@@ -8,8 +8,10 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/renderer/*"]
+      "@/*": ["./src/renderer/*"],
+      "@emory/ingest-protocol": ["../../packages/ingest-protocol/src/index.ts"]
     }
   },
-  "include": ["src/renderer/**/*"]
+  "include": ["src/renderer/**/*"],
+  "exclude": ["src/renderer/**/*.test.ts"]
 }

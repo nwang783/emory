@@ -3,6 +3,7 @@ import type {
   ConversationRepository,
   PersonMemory,
   PeopleRepository,
+  RelationshipRepository,
 } from '@emory/db'
 import { DeepgramService } from './deepgram.service.js'
 import { MemoryExtractionService } from './memory-extraction.service.js'
@@ -25,17 +26,60 @@ export type ProcessRecordingResult = {
 
 const MEMORY_CONFIDENCE_THRESHOLD = 0.65
 
+function summarizeMemory(memory: {
+  memoryText: string
+  memoryType: string
+  confidence: number | null
+  appliesToPerson?: string
+  personId?: string
+}) {
+  return {
+    memoryText: memory.memoryText,
+    memoryType: memory.memoryType,
+    confidence: memory.confidence,
+    appliesToPerson: memory.appliesToPerson,
+    personId: memory.personId,
+  }
+}
+
+function relationshipContextFromGraph(
+  relationshipRepo: RelationshipRepository,
+  selfId: string | undefined,
+  targetPersonId: string,
+): string | null {
+  if (!selfId) return null
+  const rel = relationshipRepo.findBetween(selfId, targetPersonId)
+  if (!rel) return null
+  const n = rel.notes?.trim()
+  return n ? `${rel.relationshipType} (${n})` : rel.relationshipType
+}
+
 export class ConversationProcessingService {
   constructor(
     private conversationRepo: ConversationRepository,
     private peopleRepo: PeopleRepository,
+    private relationshipRepo: RelationshipRepository,
     private deepgramService: DeepgramService,
     private memoryExtractionService: MemoryExtractionService,
   ) {}
 
   async processRecording(input: ProcessRecordingInput): Promise<ProcessRecordingResult> {
+    console.log('[memory-processing] start', {
+      recordingId: input.recordingId ?? null,
+      personId: input.personId,
+      encounterId: input.encounterId ?? null,
+      audioPath: input.audioPath,
+      mimeType: input.mimeType,
+      durationMs: input.durationMs ?? null,
+      recordedAt: input.recordedAt,
+    })
+
     const targetPerson = this.peopleRepo.findById(input.personId)
     if (!targetPerson) {
+      console.error('[memory-processing] target person not found', {
+        personId: input.personId,
+        recordingId: input.recordingId ?? null,
+      })
       throw new Error('Target person not found')
     }
     const selfPerson = this.peopleRepo.findSelf()
@@ -68,14 +112,29 @@ export class ConversationProcessingService {
         mimeType: input.mimeType,
       })
       transcriptText = transcript.text
+      console.log('[memory-processing] transcript complete', {
+        recordingId: recording.id,
+        provider: transcript.provider,
+        transcriptLength: transcriptText.length,
+        transcriptPreview: transcriptText.slice(0, 160),
+      })
       recording = this.conversationRepo.setTranscript(recording.id, transcriptText, transcript.provider) ?? recording
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      console.error('[memory-processing] transcript failed', {
+        recordingId: recording.id,
+        personId: input.personId,
+        error: message,
+      })
       recording = this.conversationRepo.markTranscriptFailed(recording.id, message) ?? recording
       return { recording, memories: [] }
     }
 
     if (!transcriptText.trim()) {
+      console.log('[memory-processing] transcript empty, skipping extraction', {
+        recordingId: recording.id,
+        personId: input.personId,
+      })
       const extraction = {
         summary: '',
         memories: [],
@@ -98,9 +157,21 @@ export class ConversationProcessingService {
         targetPerson: {
           id: targetPerson.id,
           name: targetPerson.name,
-          relationship: targetPerson.relationship,
+          relationship: relationshipContextFromGraph(
+            this.relationshipRepo,
+            selfPerson?.id,
+            targetPerson.id,
+          ),
         },
         recordedAt: input.recordedAt,
+      })
+
+      console.log('[memory-processing] extraction complete', {
+        recordingId: recording.id,
+        summaryLength: extraction.summary.length,
+        extractedMemoryCount: extraction.memories.length,
+        uncertainItemCount: extraction.uncertainItems.length,
+        extractedMemories: extraction.memories.map((memory) => summarizeMemory(memory)),
       })
 
       recording = this.conversationRepo.setExtractionResult(recording.id, extraction) ?? recording
@@ -127,10 +198,33 @@ export class ConversationProcessingService {
           }]
         })
 
+      const rejectedMemories = extraction.memories.filter(
+        (memory) => memory.confidence !== null && memory.confidence < MEMORY_CONFIDENCE_THRESHOLD,
+      )
+
+      console.log('[memory-processing] memory selection complete', {
+        recordingId: recording.id,
+        threshold: MEMORY_CONFIDENCE_THRESHOLD,
+        acceptedCount: acceptedMemories.length,
+        rejectedCount: rejectedMemories.length,
+        acceptedMemories: acceptedMemories.map((memory) => summarizeMemory(memory)),
+        rejectedMemories: rejectedMemories.map((memory) => summarizeMemory(memory)),
+      })
+
       const memories = this.conversationRepo.addMemories(acceptedMemories)
+      console.log('[memory-processing] memory insert complete', {
+        recordingId: recording.id,
+        insertedCount: memories.length,
+        insertedMemoryIds: memories.map((memory) => memory.id),
+      })
       return { recording, memories }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      console.error('[memory-processing] extraction failed', {
+        recordingId: recording.id,
+        personId: input.personId,
+        error: message,
+      })
       recording = this.conversationRepo.markExtractionFailed(recording.id, message) ?? recording
       return { recording, memories: [] }
     }

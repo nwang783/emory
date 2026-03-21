@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Trash2,
   ArrowRightLeft,
@@ -11,8 +11,15 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import {
+  MiniSidebarNav,
+  type MiniSidebarNavItem,
+  PageHeader,
+  PageScroll,
+  PageShell,
+  PageToolbar,
+  PageWorkspace,
+} from '@/shared/components/PageLayout'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -92,6 +99,7 @@ export function EmbeddingGallery(): React.JSX.Element {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [filterSource, setFilterSource] = useState<string>('all')
+  const [sidebarSelection, setSidebarSelection] = useState<string>('__top')
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
@@ -99,6 +107,9 @@ export function EmbeddingGallery(): React.JSX.Element {
     ids: string[]
     targetPersonId?: string
   }>({ open: false, action: 'delete', ids: [] })
+
+  const topAnchorRef = useRef<HTMLDivElement>(null)
+  const groupAnchorRefs = useRef<Map<string, HTMLDivElement | null>>(new Map())
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -117,7 +128,13 @@ export function EmbeddingGallery(): React.JSX.Element {
     }
   }, [])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  useEffect(() => {
+    setSidebarSelection('__top')
+  }, [filterSource])
 
   function toggleGroup(personId: string): void {
     setExpandedGroups((prev) => {
@@ -190,20 +207,48 @@ export function EmbeddingGallery(): React.JSX.Element {
   const totalEmbeddings = groups.reduce((sum, g) => sum + g.embeddings.length, 0)
   const selectedCount = selectedIds.size
 
+  const sidebarItems = useMemo((): MiniSidebarNavItem[] => {
+    const countFor = (embeddings: EmbeddingMeta[]): number =>
+      filterSource === 'all'
+        ? embeddings.length
+        : embeddings.filter((e) => e.source === filterSource).length
+
+    const items: MiniSidebarNavItem[] = [
+      { id: '__top', label: 'All groups', badge: String(groups.length) },
+    ]
+    for (const g of groups) {
+      const n = countFor(g.embeddings)
+      if (n === 0) continue
+      items.push({ id: g.personId, label: g.personName, badge: String(n) })
+    }
+    return items
+  }, [groups, filterSource])
+
+  function handleSidebarSelect(id: string): void {
+    setSidebarSelection(id)
+    if (id === '__top') {
+      topAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+    requestAnimationFrame(() => {
+      groupAnchorRefs.current.get(id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+
   return (
-    <section className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 pt-6 pb-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Face Embeddings</h2>
-          <p className="text-xs text-muted-foreground">
-            {totalEmbeddings} embedding{totalEmbeddings !== 1 ? 's' : ''} across{' '}
-            {groups.length} {groups.length === 1 ? 'person' : 'people'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PageShell>
+      <PageHeader
+        title="Face embeddings"
+        description={`${totalEmbeddings} total · ${groups.length} ${groups.length === 1 ? 'person' : 'people'}`}
+        actions={
           <Select value={filterSource} onValueChange={setFilterSource}>
-            <SelectTrigger className="h-8 w-[120px] text-xs">
-              <SelectValue placeholder="Filter" />
+            <SelectTrigger className="h-8 w-[132px] text-xs">
+              <SelectValue placeholder="Source" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All sources</SelectItem>
@@ -212,48 +257,66 @@ export function EmbeddingGallery(): React.JSX.Element {
               <SelectItem value="auto_learn">Auto</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
+        }
+      />
 
       {selectedCount > 0 && (
-        <div className="flex items-center gap-2 border-y border-border bg-muted/50 px-6 py-2">
-          <span className="text-xs font-medium">{selectedCount} selected</span>
-          <Button
-            size="sm"
-            variant="destructive"
-            className="h-7 text-xs"
-            onClick={() => setConfirmDialog({ open: true, action: 'delete', ids: Array.from(selectedIds) })}
-          >
-            <Trash2 className="mr-1 h-3 w-3" />
-            Delete
-          </Button>
-          <Select
-            onValueChange={(personId) =>
-              setConfirmDialog({ open: true, action: 'reassign', ids: Array.from(selectedIds), targetPersonId: personId })
-            }
-          >
-            <SelectTrigger className="h-7 w-[160px] text-xs">
-              <ArrowRightLeft className="mr-1 h-3 w-3" />
-              <SelectValue placeholder="Reassign to..." />
-            </SelectTrigger>
-            <SelectContent>
-              {people.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedIds(new Set())}>
-            Clear
-          </Button>
-        </div>
+        <PageToolbar>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground">{selectedCount} selected</span>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-8 text-xs"
+              onClick={() => setConfirmDialog({ open: true, action: 'delete', ids: Array.from(selectedIds) })}
+            >
+              <Trash2 className="mr-1 h-3 w-3" />
+              Delete
+            </Button>
+            <Select
+              onValueChange={(personId) =>
+                setConfirmDialog({
+                  open: true,
+                  action: 'reassign',
+                  ids: Array.from(selectedIds),
+                  targetPersonId: personId,
+                })
+              }
+            >
+              <SelectTrigger className="h-8 w-[180px] text-xs">
+                <ArrowRightLeft className="mr-1 h-3 w-3" />
+                <SelectValue placeholder="Reassign to…" />
+              </SelectTrigger>
+              <SelectContent>
+                {people.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setSelectedIds(new Set())}>
+              Clear selection
+            </Button>
+          </div>
+        </PageToolbar>
       )}
 
-      <Separator />
+      <PageWorkspace
+        miniSidebar={
+          !loading && groups.length > 0 ? (
+            <MiniSidebarNav
+              label="People"
+              items={sidebarItems}
+              activeId={sidebarSelection}
+              onSelect={handleSidebarSelect}
+            />
+          ) : undefined
+        }
+      >
+        <PageScroll maxWidth="7xl" innerClassName="flex flex-col gap-4 pb-8 pt-1">
+          <div ref={topAnchorRef} className="scroll-mt-1 shrink-0" aria-hidden />
 
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-3 px-6 py-4">
           {loading &&
             Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="rounded-lg border border-border p-4">
@@ -281,7 +344,15 @@ export function EmbeddingGallery(): React.JSX.Element {
               const isExpanded = expandedGroups.has(group.personId)
 
               return (
-                <div key={group.personId} className="rounded-lg border border-border">
+                <div
+                  key={group.personId}
+                  id={`emb-group-${group.personId}`}
+                  ref={(el) => {
+                    if (el) groupAnchorRefs.current.set(group.personId, el)
+                    else groupAnchorRefs.current.delete(group.personId)
+                  }}
+                  className="scroll-mt-2 rounded-lg border border-border"
+                >
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted/50"
@@ -375,8 +446,8 @@ export function EmbeddingGallery(): React.JSX.Element {
                 </div>
               )
             })}
-        </div>
-      </ScrollArea>
+        </PageScroll>
+      </PageWorkspace>
 
       <Dialog
         open={confirmDialog.open}
@@ -415,6 +486,6 @@ export function EmbeddingGallery(): React.JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </PageShell>
   )
 }

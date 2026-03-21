@@ -1,6 +1,17 @@
-import type { ConversationRecording, ConversationRepository, PeopleRepository, Person, PersonMemory } from '@emory/db'
+import type {
+  ConversationRecording,
+  ConversationRepository,
+  PeopleRepository,
+  Person,
+  PersonMemory,
+  RelationshipRepository,
+} from '@emory/db'
 import { DeepgramService } from './deepgram.service.js'
-import { MemoryAnswerService, type MemoryAnswerResult } from './memory-answer.service.js'
+import {
+  MemoryAnswerService,
+  type MatchedGraphRelationship,
+  type MemoryAnswerResult,
+} from './memory-answer.service.js'
 import {
   MemoryQueryUnderstandingService,
   type MemoryQueryPlan,
@@ -21,6 +32,7 @@ export type QueryMemoriesResult = {
   queryTranscript: string
   plan: MemoryQueryPlan
   matchedPeople: Person[]
+  matchedGraphRelationships: MatchedGraphRelationship[]
   matchedMemories: PersonMemory[]
   matchedRecordings: ConversationRecording[]
   answer: MemoryAnswerResult
@@ -53,19 +65,60 @@ function uniqueRecordings(recordings: ConversationRecording[]): ConversationReco
   })
 }
 
+function summarizePerson(person: Person) {
+  return {
+    id: person.id,
+    name: person.name,
+    relationship: person.relationship,
+  }
+}
+
+function summarizeMemory(memory: PersonMemory) {
+  return {
+    id: memory.id,
+    personId: memory.personId,
+    memoryType: memory.memoryType,
+    memoryDate: memory.memoryDate,
+    memoryText: memory.memoryText,
+  }
+}
+
+function summarizeRecording(recording: ConversationRecording) {
+  return {
+    id: recording.id,
+    personId: recording.personId,
+    recordedAt: recording.recordedAt,
+    transcriptStatus: recording.transcriptStatus,
+    extractionStatus: recording.extractionStatus,
+  }
+}
+
 export class MemoryQueryService {
   constructor(
     private conversationRepo: ConversationRepository,
     private peopleRepo: PeopleRepository,
+    private relationshipRepo: RelationshipRepository,
     private deepgramService: DeepgramService,
     private understandingService: MemoryQueryUnderstandingService,
     private answerService: MemoryAnswerService,
   ) {}
 
   async queryFromAudio(input: QueryMemoriesInput): Promise<QueryMemoriesResult> {
+    console.log('[memory-query] audio query start', {
+      audioPath: input.audioPath,
+      mimeType: input.mimeType,
+      askedAt: input.askedAt ?? null,
+    })
+
     const transcript = await this.deepgramService.transcribeFile({
       audioPath: input.audioPath,
       mimeType: input.mimeType,
+    })
+
+    console.log('[memory-query] audio transcript complete', {
+      provider: transcript.provider,
+      transcriptLength: transcript.text.length,
+      transcriptPreview: transcript.text.slice(0, 160),
     })
 
     return this.queryFromText({
@@ -82,15 +135,35 @@ export class MemoryQueryService {
 
     const askedAt = input.askedAt ?? new Date().toISOString()
     const selfPerson = this.peopleRepo.findSelf()
+    console.log('[memory-query] text query start', {
+      askedAt,
+      queryText,
+      selfPersonId: selfPerson?.id ?? null,
+    })
     const plan = await this.understandingService.understandQuery({
       queryText,
       askedAt,
       selfName: selfPerson?.name ?? null,
     })
 
+    console.log('[memory-query] plan resolved', {
+      queryText,
+      askedAt,
+      plan,
+    })
+
     const matchedPeople = this.resolveMatchedPeople(plan, selfPerson)
+    const matchedGraphRelationships = this.resolveMatchedGraphRelationships(selfPerson, matchedPeople)
     const matchedMemories = this.resolveMatchedMemories(plan, selfPerson, matchedPeople)
     const matchedRecordings = this.resolveMatchedRecordings(plan, selfPerson, matchedPeople)
+    console.log('[memory-query] retrieval complete', {
+      matchedPeopleCount: matchedPeople.length,
+      matchedMemoryCount: matchedMemories.length,
+      matchedRecordingCount: matchedRecordings.length,
+      matchedPeople: matchedPeople.map((person) => summarizePerson(person)),
+      matchedMemories: matchedMemories.map((memory) => summarizeMemory(memory)),
+      matchedRecordings: matchedRecordings.map((recording) => summarizeRecording(recording)),
+    })
     const answer = await this.answerService.buildAnswer({
       askedAt,
       queryText,
@@ -99,12 +172,20 @@ export class MemoryQueryService {
       matchedPeople,
       matchedMemories,
       matchedRecordings,
+      matchedGraphRelationships,
+    })
+
+    console.log('[memory-query] answer complete', {
+      answerText: answer.answerText,
+      citationsCount: answer.citations.length,
+      confidence: answer.confidence,
     })
 
     return {
       queryTranscript: queryText,
       plan,
       matchedPeople,
+      matchedGraphRelationships,
       matchedMemories,
       matchedRecordings,
       answer,
@@ -125,14 +206,36 @@ export class MemoryQueryService {
     return uniquePeople(people)
   }
 
+  private resolveMatchedGraphRelationships(
+    selfPerson: Person | null,
+    matchedPeople: Person[],
+  ): MatchedGraphRelationship[] {
+    if (!selfPerson) return []
+
+    const out: MatchedGraphRelationship[] = []
+    for (const person of matchedPeople) {
+      if (person.id === selfPerson.id) continue
+      const rel = this.relationshipRepo.findBetween(selfPerson.id, person.id)
+      if (!rel) continue
+      out.push({
+        otherPersonId: person.id,
+        otherPersonName: person.name,
+        relationshipType: rel.relationshipType,
+        notes: rel.notes,
+      })
+    }
+    return out
+  }
+
   private resolveMatchedMemories(plan: MemoryQueryPlan, selfPerson: Person | null, matchedPeople: Person[]): PersonMemory[] {
     const personIds = matchedPeople.map((person) => person.id)
     const memories: PersonMemory[] = []
 
     if (personIds.length > 0) {
       for (const personId of personIds) {
-        memories.push(...this.conversationRepo.getMemoriesByPerson(personId, 8))
+        memories.push(...this.conversationRepo.getMemoriesByPerson(personId, 12))
       }
+      memories.push(...this.conversationRepo.getRelationshipMemoriesForPersonIds(personIds))
     } else if (plan.personScope === 'self' && selfPerson) {
       memories.push(...this.conversationRepo.getMemoriesByPerson(selfPerson.id, 8))
     } else {

@@ -23,7 +23,10 @@ function normalizeConfig(raw: unknown): RemoteIngestPersisted {
   }
   const o = raw as Record<string, unknown>
   const bindMode =
-    o.bindMode === 'all' || o.bindMode === 'loopback' || o.bindMode === 'tailscale'
+    o.bindMode === 'all' ||
+    o.bindMode === 'loopback' ||
+    o.bindMode === 'tailscale' ||
+    o.bindMode === 'tailscale_lan'
       ? o.bindMode
       : REMOTE_INGEST_DEFAULT_CONFIG.bindMode
   let instanceId = typeof o.instanceId === 'string' && o.instanceId.length > 0 ? o.instanceId : base.instanceId
@@ -43,6 +46,10 @@ function normalizeConfig(raw: unknown): RemoteIngestPersisted {
       typeof o.friendlyName === 'string' && o.friendlyName.trim().length > 0
         ? o.friendlyName.trim().slice(0, 80)
         : REMOTE_INGEST_DEFAULT_CONFIG.friendlyName,
+    webrtcVideoPreferred:
+      typeof o.webrtcVideoPreferred === 'boolean'
+        ? o.webrtcVideoPreferred
+        : REMOTE_INGEST_DEFAULT_CONFIG.webrtcVideoPreferred,
     instanceId,
   }
 }

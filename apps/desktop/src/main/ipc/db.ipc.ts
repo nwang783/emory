@@ -10,6 +10,7 @@ import {
   ConversationRepository,
 } from '@emory/db'
 import type { CreatePersonInput, RelationshipType, UpdatePersonInput } from '@emory/db'
+import { syncGraphRelationshipToMemory } from '../services/relationship-memory-sync.service.js'
 
 const VALID_RELATIONSHIP_TYPES = [
   'spouse', 'child', 'parent', 'sibling', 'friend',
@@ -99,7 +100,9 @@ export function registerDbIpc(): DbIpcResult {
       throw new Error('A relationship already exists between these people')
     }
     const relType = normalizeRelationshipType(type)
-    return relationshipRepo.create(personAId, personBId, relType, notes)
+    const relationship = relationshipRepo.create(personAId, personBId, relType, notes)
+    syncGraphRelationshipToMemory({ peopleRepo, conversationRepo, relationship })
+    return relationship
   })
 
   ipcMain.handle('db:relationships:get-by-person', (_event, personId: string) => {
@@ -108,7 +111,11 @@ export function registerDbIpc(): DbIpcResult {
 
   ipcMain.handle('db:relationships:update', (_event, id: string, type?: string, notes?: string) => {
     const relType = normalizeRelationshipTypeOptional(type)
-    return relationshipRepo.update(id, relType, notes)
+    const relationship = relationshipRepo.update(id, relType, notes)
+    if (relationship) {
+      syncGraphRelationshipToMemory({ peopleRepo, conversationRepo, relationship })
+    }
+    return relationship
   })
 
   ipcMain.handle('db:relationships:get-all', () => {
@@ -116,6 +123,7 @@ export function registerDbIpc(): DbIpcResult {
   })
 
   ipcMain.handle('db:relationships:delete', (_event, id: string) => {
+    conversationRepo.deleteMemoriesByRelationshipId(id)
     return relationshipRepo.delete(id)
   })
 
