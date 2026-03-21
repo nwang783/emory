@@ -25,7 +25,7 @@ flowchart LR
   D --> E{"Known person?"}
   E -->|Yes| F["Start / continue encounter"]
   F --> G["Record conversation audio while person is in frame"]
-  G --> H["Stop after person leaves frame for ~30s"]
+  G --> H["Stop after person leaves frame for ~2s"]
   H --> I["Deepgram speech-to-text"]
   I --> J["OpenRouter LLM memory extraction"]
   J --> K["SQLite: recordings + person memories"]
@@ -39,7 +39,7 @@ flowchart LR
 2. The iPhone app streams that video to the desktop app.
 3. The Electron app runs face recognition against a database of people the user knows.
 4. When a known person is detected, Emory starts an encounter and records conversation audio.
-5. When that person leaves the frame for roughly 30 seconds, Emory closes the recording.
+5. When that person leaves the frame for roughly 2 seconds, Emory closes the recording.
 6. Deepgram converts the audio into a transcript.
 7. An LLM through OpenRouter extracts useful memories and a short summary from the transcript.
 8. Those memories are stored against the recognized person for future recall.
