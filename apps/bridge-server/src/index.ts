@@ -3,7 +3,7 @@ import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { WebSocketServer } from 'ws'
 import { FaceService, ensureModels } from '@emory/core'
-import { SqliteAdapter } from '@emory/db'
+import { SqliteAdapter, PeopleRepository } from '@emory/db'
 import { FrameProcessor } from './frame-processor.js'
 import { AudioProcessor } from './audio-processor.js'
 import { WsHandler } from './ws-handler.js'
@@ -24,8 +24,9 @@ async function main(): Promise<void> {
   const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'emory.db')
   console.log(`[Bridge] Database: ${dbPath}`)
   const db = new SqliteAdapter(dbPath)
-  const peopleRepo = db.people
-  const peopleCount = peopleRepo.getAll().length
+  db.initialize()
+  const peopleRepo = new PeopleRepository(db)
+  const peopleCount = peopleRepo.findAll().length
   console.log(`[Bridge] ${peopleCount} people in database`)
 
   // Initialize face service
@@ -61,7 +62,7 @@ async function main(): Promise<void> {
         signalingPort: PORT,
         // Bridge-specific extras
         faceReady,
-        peopleCount: peopleRepo.getAll().length,
+        peopleCount: peopleRepo.findAll().length,
         wsReady: true,
       })
       res.writeHead(200, {
@@ -226,7 +227,7 @@ ws.onmessage = (e) => {
       type: 'status',
       ready: true,
       faceReady,
-      peopleCount: peopleRepo.getAll().length,
+      peopleCount: peopleRepo.findAll().length,
     })
   })
 

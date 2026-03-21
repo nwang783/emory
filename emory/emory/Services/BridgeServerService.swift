@@ -27,7 +27,7 @@ final class BridgeServerService {
 
     // Frame sampling
     private var frameCounter: Int = 0
-    let frameSampleInterval: Int = 5 // Send every 5th frame
+    let frameSampleInterval: Int = 3 // Send every 3rd frame (~5fps at 15fps input)
 
     // Results
     private var faceResultContinuation: AsyncStream<FaceResultMessage>.Continuation?
