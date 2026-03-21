@@ -131,6 +131,11 @@ export function RemoteIngestSettings(): React.JSX.Element {
     for (const a of addrs) {
       lines.push(`  http://${a}:${port}/health`)
     }
+    lines.push('', 'Video ingest (WebSocket — same port):')
+    for (const a of addrs) {
+      lines.push(`  ws://${a}:${port}/ingest`)
+    }
+    lines.push('  Phone / glasses app: publisher (default). Desktop Camera: viewer (?role=viewer).')
     if (status.tailscaleHint) {
       lines.push('')
       lines.push(`MagicDNS-style hint (verify in Tailscale admin): ${status.tailscaleHint}`)
@@ -172,9 +177,9 @@ export function RemoteIngestSettings(): React.JSX.Element {
               Remote ingest
             </CardTitle>
             <CardDescription className="text-xs">
-              Stream glasses video from your iPhone over Tailscale. The desktop acts as the processing hub
-              (face recognition, memories). WebRTC signaling will use this port in a later release; today:
-              HTTP health check only.
+              Stream glasses video from your phone over Tailscale: HTTP <code className="font-mono-ui">/health</code>,
+              WebSocket <code className="font-mono-ui">/ingest</code> (binary JPEG frames, same protocol as the bridge
+              server). The desktop Camera tab can subscribe as a viewer when ingest is enabled and listening.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -213,8 +218,8 @@ export function RemoteIngestSettings(): React.JSX.Element {
               Enable remote ingest server
             </Label>
             <p className="text-xs text-muted-foreground">
-              Opens the HTTP listener for health checks and (later) secure signaling. May trigger a Windows
-              Firewall prompt the first time you use &quot;All interfaces&quot;.
+              Opens HTTP + WebSocket on the chosen port. May trigger a Windows Firewall prompt the first time you
+              use &quot;All interfaces&quot;.
             </p>
           </div>
           <Switch

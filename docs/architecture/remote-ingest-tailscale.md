@@ -6,10 +6,12 @@ This document describes how the **Electron desktop app** exposes a **remote inge
 
 | Piece | Status |
 |-------|--------|
-| **HTTP `GET /health`** on configurable TCP port | Implemented (Phase 0) |
+| **HTTP `GET /health`** on configurable TCP port | Implemented (`protoVersion` **2** adds `wsIngestPath`) |
+| **HTTP upgrade → WebSocket `/ingest`** — publisher → viewers (binary relay) | Implemented |
 | **Persisted settings** (`remote-ingest-config.json` in app userData) | Implemented |
 | **Settings UI** (bind mode, port, beacon, friendly name) | Implemented |
-| **WSS / WebRTC signaling** | Planned |
+| **Camera tab** remote viewer (`?role=viewer`) | Implemented |
+| **WebRTC** | Planned (optional vs JPEG WS) |
 | **Pairing + session tokens** | Planned |
 
 ## Topology
@@ -23,8 +25,9 @@ This document describes how the **Electron desktop app** exposes a **remote inge
 
 ## HTTP API (Phase 0)
 
-- **`GET /health`** — JSON: `{ ok, service, protoVersion, instanceId, friendlyName, signalingPort }`.
-- **`GET /`** — short plain-text pointer to `/health`.
+- **`GET /health`** — JSON: `{ ok, service, protoVersion, instanceId, friendlyName, signalingPort, wsIngestPath }`.
+- **`GET /`** — short plain-text pointer to `/health` and `/ingest`.
+- **`WS /ingest`** — same TCP port; **`?role=viewer`** (desktop) or publisher (default / `?role=publisher`). Relay only; see [remote-camera-desktop-plan.md](./remote-camera-desktop-plan.md).
 
 No authentication on `/health` yet; keep the port **tailnet-only** via ACLs until pairing ships.
 

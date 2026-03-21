@@ -1,3 +1,9 @@
+/** Wire format version in `/health` and discovery beacons; bump when ingest API changes. */
+export const REMOTE_INGEST_PROTO_VERSION = 2
+
+/** WebSocket path for binary ingest (publisher → server → viewers). Same port as HTTP. */
+export const REMOTE_INGEST_WS_PATH = '/ingest'
+
 /** Bind address policy for the remote ingest HTTP listener. */
 export type RemoteIngestBindMode = 'all' | 'loopback' | 'tailscale'
 

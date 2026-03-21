@@ -1,9 +1,13 @@
 import http from 'node:http'
+import type { Socket } from 'node:net'
 import dgram from 'node:dgram'
+import { WebSocketServer, WebSocket } from 'ws'
 import type { RemoteIngestPersisted } from './remote-ingest-settings.service.js'
 import {
   REMOTE_INGEST_MULTICAST_ADDRESS,
   REMOTE_INGEST_MULTICAST_PORT,
+  REMOTE_INGEST_PROTO_VERSION,
+  REMOTE_INGEST_WS_PATH,
   type RemoteIngestStatus,
 } from './remote-ingest.types.js'
 import {
@@ -13,13 +17,68 @@ import {
   resolveListenHost,
 } from './remote-ingest-network.js'
 
-const SERVICE_VERSION = 1
-
 export class RemoteIngestServerService {
   private httpServer: http.Server | null = null
+  private wss: WebSocketServer | null = null
+  private publisher: WebSocket | null = null
+  private readonly viewers = new Set<WebSocket>()
   private beaconSocket: dgram.Socket | null = null
   private beaconTimer: ReturnType<typeof setInterval> | null = null
   private lastError: string | null = null
+
+  private readonly handleIngestUpgrade = (req: http.IncomingMessage, socket: Socket, head: Buffer): void => {
+    if (req.url?.split('?')[0] !== REMOTE_INGEST_WS_PATH) {
+      socket.destroy()
+      return
+    }
+    if (!this.wss) {
+      socket.destroy()
+      return
+    }
+
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      const url = new URL(req.url ?? REMOTE_INGEST_WS_PATH, 'http://127.0.0.1')
+      const isViewer = url.searchParams.get('role') === 'viewer'
+
+      if (isViewer) {
+        this.viewers.add(ws)
+        ws.on('close', () => {
+          this.viewers.delete(ws)
+        })
+        ws.on('error', () => {
+          this.viewers.delete(ws)
+        })
+        return
+      }
+
+      if (this.publisher && this.publisher.readyState === WebSocket.OPEN) {
+        try {
+          this.publisher.close(1000, 'replaced')
+        } catch {
+          // ignore
+        }
+      }
+      this.publisher = ws
+
+      ws.on('message', (data, isBinary) => {
+        if (!isBinary) return
+        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+        for (const v of this.viewers) {
+          if (v.readyState === WebSocket.OPEN) {
+            v.send(buf, { binary: true })
+          }
+        }
+      })
+
+      const clearPublisher = (): void => {
+        if (this.publisher === ws) {
+          this.publisher = null
+        }
+      }
+      ws.on('close', clearPublisher)
+      ws.on('error', clearPublisher)
+    })
+  }
 
   getStatus(persisted: RemoteIngestPersisted): RemoteIngestStatus {
     const listening = this.httpServer !== null && this.httpServer.listening
@@ -53,9 +112,38 @@ export class RemoteIngestServerService {
     }
   }
 
+  private closeIngestWebSockets(): void {
+    if (this.publisher) {
+      try {
+        this.publisher.close()
+      } catch {
+        // ignore
+      }
+      this.publisher = null
+    }
+    for (const v of [...this.viewers]) {
+      try {
+        v.close()
+      } catch {
+        // ignore
+      }
+    }
+    this.viewers.clear()
+    if (this.wss) {
+      try {
+        this.wss.close()
+      } catch {
+        // ignore
+      }
+      this.wss = null
+    }
+  }
+
   async stop(): Promise<void> {
     this.stopBeacon()
+    this.closeIngestWebSockets()
     if (this.httpServer) {
+      this.httpServer.removeListener('upgrade', this.handleIngestUpgrade)
       await new Promise<void>((resolve, reject) => {
         this.httpServer!.close((err) => {
           if (err) reject(err)
@@ -103,10 +191,11 @@ export class RemoteIngestServerService {
         const body = JSON.stringify({
           ok: true,
           service: 'emory-ingest',
-          protoVersion: SERVICE_VERSION,
+          protoVersion: REMOTE_INGEST_PROTO_VERSION,
           instanceId: persisted.instanceId,
           friendlyName: persisted.friendlyName,
           signalingPort: persisted.signalingPort,
+          wsIngestPath: REMOTE_INGEST_WS_PATH,
         })
         res.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8',
@@ -117,7 +206,7 @@ export class RemoteIngestServerService {
       }
       if (req.method === 'GET' && req.url?.split('?')[0] === '/') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end('Emory remote ingest — use GET /health\n')
+        res.end(`Emory remote ingest — GET /health — WS ${REMOTE_INGEST_WS_PATH}?role=viewer|publisher\n`)
         return
       }
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
@@ -125,6 +214,8 @@ export class RemoteIngestServerService {
     })
 
     this.httpServer = server
+    this.wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', this.handleIngestUpgrade)
 
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject)
@@ -135,11 +226,17 @@ export class RemoteIngestServerService {
     }).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err)
       this.lastError = message
-      this.httpServer = null
-      try {
-        server.close()
-      } catch {
-        // ignore
+      if (this.httpServer) {
+        this.httpServer.removeListener('upgrade', this.handleIngestUpgrade)
+      }
+      this.closeIngestWebSockets()
+      if (this.httpServer) {
+        try {
+          server.close()
+        } catch {
+          // ignore
+        }
+        this.httpServer = null
       }
     })
 
@@ -158,12 +255,14 @@ export class RemoteIngestServerService {
     const payload = (): string =>
       JSON.stringify({
         service: 'emory-ingest',
-        protoVersion: SERVICE_VERSION,
+        protoVersion: REMOTE_INGEST_PROTO_VERSION,
         instanceId: persisted.instanceId,
         friendlyName: persisted.friendlyName,
         signalingPort: persisted.signalingPort,
         httpHealthPath: '/health',
-        bindHostAdvertised: boundHost === '0.0.0.0' ? listTailscaleIpv4()[0] ?? listLanIpv4()[0] ?? '127.0.0.1' : boundHost,
+        wsIngestPath: REMOTE_INGEST_WS_PATH,
+        bindHostAdvertised:
+          boundHost === '0.0.0.0' ? listTailscaleIpv4()[0] ?? listLanIpv4()[0] ?? '127.0.0.1' : boundHost,
       })
 
     socket.on('error', (err) => {

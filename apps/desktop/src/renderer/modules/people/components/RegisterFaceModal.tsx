@@ -244,7 +244,16 @@ export function RegisterFaceModal({
         {/* Live viewfinder */}
         <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
           {!streamReady && viewfinder.phase === 'live' && (
-            <Skeleton className="absolute inset-0 rounded-lg" />
+            <>
+              <Skeleton className="absolute inset-0 rounded-lg" />
+              <div className="absolute inset-0 z-10 flex items-center justify-center px-4 text-center">
+                <p className="max-w-sm text-sm text-white/85">
+                  Live capture needs the <strong className="font-medium">computer camera</strong> running on the
+                  Camera tab. Remote phone/glasses feed does not share a stream here — use upload, or switch to
+                  &quot;Use computer camera&quot; and start the camera.
+                </p>
+              </div>
+            </>
           )}
 
           <video

@@ -1,5 +1,39 @@
 # Documentation changelog
 
+## 2026-03-21 — Remote ingest: WS `/ingest` + Camera viewer
+
+- **Desktop** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): WebSocket **`/ingest`** relays binary frames from **publisher** (phone) to **viewers** (desktop). `/health` **`protoVersion` 2** + `wsIngestPath`. [`@emory/ingest-protocol`](../packages/ingest-protocol/) shared parse/constants.
+- **Renderer** — [`useCameraFeed`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts), [`remote-ingest.store.ts`](../apps/desktop/src/renderer/shared/stores/remote-ingest.store.ts), IPC **`remote-ingest:updated`**, [`WebcamFeed`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx): remote JPEG preview + face pipeline when ingest on; **Use computer camera** override (`sessionStorage`).
+- **Docs** — [remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md), [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md), [remote-ingest-tailscale.md](./architecture/remote-ingest-tailscale.md), [remote-discovery.md](./architecture/remote-discovery.md), [apps/desktop.md](./apps/desktop.md).
+
+## 2026-03-21 — Desktop in-page mini sidebars
+
+- **Layout** — [`PageLayout.tsx`](../apps/desktop/src/renderer/shared/components/PageLayout.tsx): `PageWorkspace` (main + rail), `MiniSidebarNav` (section / filter list with optional icons and counts), `MiniSidebarPanel` (static rail content, e.g. legend).
+- **Modules** — **Settings** uses category rail + one panel per category; **Activity** filter rail; **Analytics** view switcher; **Embeddings** people jump list (scroll + expand); **Memories** memory-type rail; **People** (full width) overview rail; **Connections** right-hand legend rail. **Camera** people column slightly narrower with translucent card.
+- **Chrome** — Primary sidebar ~196px; header height 11; light backdrop blur on header / page titles where used.
+- **Fix** — `EmbeddingGallery` closed with matching `PageScroll` (was a stray `</ScrollArea>`). **MemoryBrowser** debug `console.log` / `console.error` removed.
+- **Docs** — [apps/desktop-ui.md](./apps/desktop-ui.md) updated for mini-sidebar pattern.
+
+## 2026-03-21 — Desktop module page layouts (`PageLayout`)
+
+- **Shared primitives** — [`PageLayout.tsx`](../apps/desktop/src/renderer/shared/components/PageLayout.tsx): `PageShell`, `PageHeader`, `PageToolbar`, `PageScroll`, `PageFill`.
+- **Modules** — Activity, Analytics, People, Settings, Connections, **Embeddings** (`EmbeddingGallery`), **Memories** (`MemoryBrowser`) compose these for consistent headers, toolbars, and scroll vs full-bleed canvas.
+- **Connections** — Legend row uses `PageToolbar`; graph uses `PageFill`. Closing tag aligned to `PageShell`.
+- **Docs** — [apps/desktop-ui.md](./apps/desktop-ui.md) “Page layout primitives” section.
+
+## 2026-03-21 — Desktop UI: anti–“vibecode” pass
+
+- **Restraint** — Flat main surface (no radial meshes); near-neutral `oklch` palette; desaturated primary; cards use border only (no ring stack).
+- **Chrome** — Header: solid bar, simple bordered logo tile; sidebar: no tooltips on labeled items, active = `accent` only; status bar: semantic `foreground` instead of arbitrary colors; sentence case labels.
+- **Type** — Module titles default to **Inter** semibold; **Plus Jakarta** limited to app name + Settings H1; see [desktop-ui.md](./apps/desktop-ui.md).
+
+## 2026-03-21 — Desktop UI refresh (Vercel / Tailscale–inspired)
+
+- **Renderer** — Wider **grouped sidebar** (Workspace / Insights / System), refined **header** (gradient mark, mono status chips), **status bar** with JetBrains Mono, main area **`app-main-surface`** gradient wash; camera rail uses translucent card treatment.
+- **Theme** — Cool dark `oklch` neutrals + indigo primary in [`index.css`](../apps/desktop/src/renderer/index.css); **Inter Variable**, **Plus Jakarta Sans** (`font-heading`), **JetBrains Mono** (`font-mono-ui`) via fontsource packages.
+- **Modules** — Consistent page headers (border + `font-heading`) on Activity, Analytics, Connections, Embeddings, Memories, People, Settings.
+- **Docs** — [apps/desktop-ui.md](./apps/desktop-ui.md), link from [apps/desktop.md](./apps/desktop.md).
+
 ## 2026-03-21 — gitignore `.agents/`
 
 - **`.gitignore`** — Ignore **`.agents/`** entirely (local gstack clone + skills, not committed). Removed narrower `.agents/...` rules superseded by this.

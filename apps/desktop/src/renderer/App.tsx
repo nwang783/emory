@@ -18,6 +18,7 @@ import { ErrorBoundary } from './shared/components/ErrorBoundary'
 import { useFaceStore } from './shared/stores/face.store'
 import { usePeopleStore } from './shared/stores/people.store'
 import { useSettingsStore } from './shared/stores/settings.store'
+import { useRemoteIngestStore } from './shared/stores/remote-ingest.store'
 
 function CameraView(): React.JSX.Element {
   const modelStatus = useFaceStore((s) => s.modelStatus)
@@ -98,6 +99,13 @@ export function App(): React.JSX.Element {
     }
     boot()
   }, [setModelStatus, setError, loadPeople])
+
+  useEffect(() => {
+    void useRemoteIngestStore.getState().hydrateFromMain()
+    return window.emoryApi.remoteIngest.onUpdated((payload) => {
+      useRemoteIngestStore.getState().applyPayload(payload)
+    })
+  }, [])
 
   return (
     <TooltipProvider delayDuration={280}>

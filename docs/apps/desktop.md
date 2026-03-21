@@ -2,6 +2,8 @@
 
 Electron desktop application for the Emory face recognition system. Built with electron-vite, React 19, TypeScript, and Tailwind CSS.
 
+**UI shell & design tokens:** see [desktop-ui.md](./desktop-ui.md) (typography, sidebar/header layout, shadcn usage).
+
 ## Overview
 
 The desktop app is the primary Emory client: it captures webcam frames, runs SCRFD detection and ArcFace embedding extraction via `@emory/core`, matches against embeddings in `@emory/db`, and renders live overlays with a **sidebar-driven layout**: **Camera → People → Connections → Activity → Analytics → Embeddings → Settings**. `LivenessService` and `AppearanceService` from `@emory/core` are available for pipeline integration but are **not** invoked from the default `face:*` IPC handlers in this release.
@@ -28,11 +30,11 @@ apps/desktop/
     │   │   ├── face.ipc.ts           # Face processing IPC handlers
     │   │   ├── unknown.ipc.ts        # Unknown person tracking IPC handlers
     │   │   ├── conversation.ipc.ts   # Save/process recordings, list rows, query memories (audio)
-    │   │   └── remote-ingest.ipc.ts  # Remote hub: get/apply config, status (Tailscale ingest Phase 0)
+    │   │   └── remote-ingest.ipc.ts  # Remote hub: get/apply config, status; broadcast remote-ingest:updated
     │   └── services/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
     │       ├── remote-ingest-settings.service.ts  # Persist remote-ingest-config.json
-    │       ├── remote-ingest-server.service.ts   # HTTP /health + UDP discovery beacon
+    │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest relay + UDP beacon
     │       ├── remote-ingest-network.ts          # Tailscale 100.x / bind helper
     │       ├── remote-ingest.types.ts            # Config + status types
     │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
@@ -96,6 +98,7 @@ apps/desktop/
             ├── components/
             │   ├── Header.tsx         # Top bar: branding, model status, settings
             │   ├── Sidebar.tsx        # Vertical tab navigation (aria-label + aria-current)
+            │   ├── PageLayout.tsx     # PageShell, header/toolbar/scroll + PageWorkspace / mini sidebars
             │   ├── StatusBar.tsx      # Bottom status bar (FPS, faces, timing)
             │   └── ErrorBoundary.tsx  # Catches render errors in main content; Try again resets state
             ├── lib/
@@ -113,7 +116,7 @@ apps/desktop/
 |---|---|
 | **Main Process** (`src/main/`) | Electron app lifecycle, IPC handler registration, service orchestration. Uses `@emory/core` for face processing and `@emory/db` for persistence. On **`before-quit`**, stops `CleanupService` and calls **`disposeFaceService()`** from `ipc/face.ipc.ts` to release ONNX `InferenceSession` instances (best-effort, fire-and-forget). |
 | **Services** (`src/main/services/`) | Background jobs and pipelines. `CleanupService` applies `retention_config`. `ConversationStorageService` writes clips under **`userData/conversations/YYYY/MM/`**. `ConversationProcessingService` runs Deepgram + memory extraction on saved segments; extraction receives **graph** context via `RelationshipRepository.findBetween(self, target)` (not `people.relationship`). `MemoryQueryService` transcribes a query clip, plans retrieval, searches SQLite (`searchMemories` / `searchRecordings`), and synthesizes a grounded answer. |
-| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; **`remote-ingest.ipc.ts`** — `remote-ingest:get-config`, `get-status`, `apply`; `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
+| **IPC Handlers** (`src/main/ipc/`) | `db.ipc.ts` — people, embeddings, relationships, retention, **`ConversationRepository`**; **`conversation.ipc.ts`** — `save-and-process`, `process-recording`, listing handlers, **`conversation:query-memories`**; **`remote-ingest.ipc.ts`** — `remote-ingest:get-config`, `get-status`, `apply` (+ **`remote-ingest:updated`** push after apply); `encounter.ipc.ts`, `face.ipc.ts`, `unknown.ipc.ts` as above. |
 | **Preload** (`src/preload/`) | Context bridge exposing `window.emoryApi` with typed methods. Converts `ArrayBuffer` to `Uint8Array` for IPC serialization. |
 | **Renderer** (`src/renderer/`) | React UI. Domain modules (`camera`, `people`, `connections`, `embeddings`, `settings`, `activity`, `analytics`) plus shared layout components and Zustand stores. |
 
@@ -145,6 +148,8 @@ The **Remote ingest** card (`RemoteIngestSettings.tsx`) exposes:
 - **Copy connection details** puts health URLs and instance id on the clipboard for manual phone setup.
 
 See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md) and [Remote discovery](../architecture/remote-discovery.md).
+
+**Planned:** When remote ingest is enabled, the **Camera** tab should show the **phone / Ray-Ban app video stream** instead of local `getUserMedia` — phased plan (WebSocket + JPEG aligned with `apps/bridge-server`, then optional WebRTC): [Remote camera (desktop) plan](../architecture/remote-camera-desktop-plan.md).
 
 The **Data Retention** card in `SettingsPanel` exposes:
 
@@ -403,6 +408,7 @@ Session state is managed in-process: `encounter:start-session` stores the active
 | `remote-ingest:get-config` | Renderer → Main | `{ config, instanceId }` (persisted remote ingest settings) |
 | `remote-ingest:get-status` | Renderer → Main | `RemoteIngestStatus` (listening, addresses, beacon, errors) |
 | `remote-ingest:apply` | Renderer → Main | Partial config patch → `{ success, config?, status?, error? }` — saves file and restarts listener |
+| `remote-ingest:updated` | Main → Renderer | `{ config, instanceId, status }` — emitted after successful apply (all windows) |
 
 ### App Operations
 
@@ -470,6 +476,7 @@ The preload script exposes `window.emoryApi` — `face`, `db` (people, relations
 | `emoryApi.remoteIngest.getConfig()` | `remote-ingest:get-config` |
 | `emoryApi.remoteIngest.getStatus()` | `remote-ingest:get-status` |
 | `emoryApi.remoteIngest.apply(patch)` | `remote-ingest:apply` |
+| `emoryApi.remoteIngest.onUpdated(handler)` | Subscribe to `remote-ingest:updated`; returns unsubscribe |
 
 ## IPC Data Serialization
 
