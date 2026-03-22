@@ -17,23 +17,37 @@ final class RecognitionExperienceCoordinator {
     private init() {}
 
     func handleFocusEvent(_ event: DesktopPersonFocusEvent) {
-        cancelAnnouncementPlayback()
-
         guard let person = event.person else {
             currentFocusedPersonId = nil
+            cancelAnnouncementPlayback()
             conversationCaptureCoordinator.finishActiveConversation(reason: event.reason)
             return
         }
 
-        if let currentFocusedPersonId, currentFocusedPersonId != person.id {
+        let previousFocusedPersonId = currentFocusedPersonId
+        if let previousFocusedPersonId, previousFocusedPersonId != person.id {
+            cancelAnnouncementPlayback()
             conversationCaptureCoordinator.finishActiveConversation(reason: "focus_changed")
         }
         self.currentFocusedPersonId = person.id
+
+        guard AppSettings.shared.recognitionAnnouncementsEnabled else {
+            cancelAnnouncementPlayback()
+            conversationCaptureCoordinator.beginConversationCapture(for: person)
+            return
+        }
+
+        conversationCaptureCoordinator.finishActiveConversation(reason: "announcements_enabled")
+
+        if activeAnnouncementPersonId == person.id, announcementTask != nil {
+            print("[RecognitionExperience] Keeping announcement in progress for \(person.name)")
+            return
+        }
+
         activeAnnouncementPersonId = person.id
 
         if let skipReason = announcementSkipReason(for: person.id) {
-            print("[RecognitionExperience] Skipping announcement for \(person.name): \(skipReason)")
-            conversationCaptureCoordinator.beginConversationCapture(for: person)
+            print("[RecognitionExperience] Skipping announcement for \(person.name): \(skipReason); recording remains disabled while announcements are enabled")
             return
         }
 
@@ -49,21 +63,19 @@ final class RecognitionExperienceCoordinator {
                 await MainActor.run {
                     self.lastAnnouncementAtByPersonId[person.id] = Date()
                     self.onAnnouncementStateChange?(person.id, false)
-                    if self.activeAnnouncementPersonId == person.id {
-                        self.conversationCaptureCoordinator.beginConversationCapture(for: person)
-                    }
+                    self.announcementTask = nil
+                    print("[RecognitionExperience] Announcement finished for \(person.name); recording remains disabled while announcements are enabled")
                 }
             } catch is CancellationError {
                 await MainActor.run {
                     self.onAnnouncementStateChange?(person.id, false)
+                    self.announcementTask = nil
                 }
             } catch {
                 print("[RecognitionExperience] Announcement failed for \(person.name): \(error.localizedDescription)")
                 await MainActor.run {
                     self.onAnnouncementStateChange?(person.id, false)
-                    if self.activeAnnouncementPersonId == person.id {
-                        self.conversationCaptureCoordinator.beginConversationCapture(for: person)
-                    }
+                    self.announcementTask = nil
                 }
             }
         }
@@ -84,8 +96,6 @@ final class RecognitionExperienceCoordinator {
 
     private func announcementSkipReason(for personId: String) -> String? {
         let settings = AppSettings.shared
-        guard settings.recognitionAnnouncementsEnabled else { return "disabled_in_settings" }
-
         if settings.recognitionAnnouncementsRequireMetaRoute && !AudioRouteDetector.isMetaAudioRouteActive() {
             return "meta_route_required_but_unavailable"
         }

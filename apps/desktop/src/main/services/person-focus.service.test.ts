@@ -142,4 +142,21 @@ describe('PersonFocusService', () => {
       },
     })
   })
+
+  test('uses a 4 second default clear timeout', () => {
+    const events: PersonFocusMessage[] = []
+    const service = new PersonFocusService(createRepo(), (message) => events.push(message))
+
+    service.observe({ timestamp: 60, matches: [createMatch(personA.id, 0.9, 100)] })
+    service.observe({ timestamp: 60.1, matches: [createMatch(personA.id, 0.91, 98)] })
+    service.observe({ timestamp: 63.9, matches: [] })
+    expect(events).toHaveLength(1)
+
+    service.observe({ timestamp: 64.2, matches: [] })
+    expect(events).toHaveLength(2)
+    expect(events[1]).toMatchObject({
+      reason: 'focus_cleared',
+      person: null,
+    })
+  })
 })
