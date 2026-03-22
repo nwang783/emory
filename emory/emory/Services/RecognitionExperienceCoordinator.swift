@@ -95,13 +95,6 @@ final class RecognitionExperienceCoordinator {
     }
 
     private func announcementSkipReason(for personId: String) -> String? {
-        let settings = AppSettings.shared
-        let hasRoutableMetaPromptDevice =
-            AudioRouteDetector.isMetaOutputRouteActive() || AudioRouteDetector.metaBluetoothInputPort() != nil
-        if settings.recognitionAnnouncementsRequireMetaRoute && !hasRoutableMetaPromptDevice {
-            return "meta_prompt_route_required_but_unavailable"
-        }
-
         if let lastPlayedAt = lastAnnouncementAtByPersonId[personId],
            Date().timeIntervalSince(lastPlayedAt) < announcementCooldown {
             return "cooldown_active"
