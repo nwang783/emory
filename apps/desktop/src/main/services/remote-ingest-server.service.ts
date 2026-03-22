@@ -50,22 +50,6 @@ function isLoopbackClient(req: http.IncomingMessage): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
-/** Structured line for terminal when the iOS app (or Test Connection) hits HTTP APIs. */
-function logRemoteIngestMobileHttpHit(req: http.IncomingMessage, pathname: string): void {
-  const uaRaw = req.headers['user-agent']
-  const userAgent = typeof uaRaw === 'string' ? uaRaw.slice(0, 160) : ''
-  console.log(
-    JSON.stringify({
-      service: 'remote-ingest',
-      action: 'mobile_http_hit',
-      method: req.method ?? '',
-      path: pathname,
-      remoteAddress: remoteIngestClientIp(req),
-      userAgent,
-    }),
-  )
-}
-
 /** Standalone HTML page served at GET /viewer for browser-based debug of the raw video feed. */
 function VIEWER_HTML(hostPort: string): string {
   return `<!DOCTYPE html>
@@ -218,15 +202,6 @@ export class RemoteIngestServerService {
     try {
       msg = JSON.parse(text) as { type?: string; seq?: number }
     } catch {
-      console.log(
-        JSON.stringify({
-          service: 'remote-ingest',
-          action: 'ingest_text_non_json',
-          from: fromViewer ? 'viewer' : 'publisher',
-          remoteAddress: remoteIngestClientIp(req),
-          preview: text.slice(0, 120),
-        }),
-      )
       return
     }
     const seq = typeof msg.seq === 'number' ? msg.seq : 0
@@ -234,17 +209,6 @@ export class RemoteIngestServerService {
     if (msg.type === 'ingest_ping') {
       const publisherPresent = this.publisher !== null && this.publisher.readyState === WebSocket.OPEN
       const viewerCount = this.viewers.size
-      console.log(
-        JSON.stringify({
-          service: 'remote-ingest',
-          action: 'ingest_ping',
-          from: fromViewer ? 'viewer' : 'publisher',
-          seq,
-          remoteAddress: remoteIngestClientIp(req),
-          publisherPresent,
-          viewerCount,
-        }),
-      )
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(
           JSON.stringify({
@@ -262,15 +226,6 @@ export class RemoteIngestServerService {
     }
 
     if (msg.type === 'ingest_pong_relay') {
-      console.log(
-        JSON.stringify({
-          service: 'remote-ingest',
-          action: 'ingest_pong_relay',
-          seq,
-          from: 'publisher',
-          remoteAddress: remoteIngestClientIp(req),
-        }),
-      )
       const body = JSON.stringify({ type: 'ingest_pong_relay', seq })
       for (const v of this.viewers) {
         if (v.readyState === WebSocket.OPEN) {
@@ -376,34 +331,11 @@ export class RemoteIngestServerService {
       publisherMessageCount++
       if (!isBinary) {
         publisherTextCount++
-        if (publisherTextCount <= 3) {
-          console.log(
-            JSON.stringify({
-              service: 'remote-ingest',
-              action: 'publisher_text_message',
-              remoteAddress: remoteIngestClientIp(req),
-              messageNumber: publisherMessageCount,
-              preview: rawDataToUtf8(data).slice(0, 200),
-            }),
-          )
-        }
         this.handleIngestControlText(ws, req, false, rawDataToUtf8(data))
         return
       }
       publisherBinaryCount++
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
-      if (publisherBinaryCount <= 3 || publisherBinaryCount % 100 === 0) {
-        console.log(
-          JSON.stringify({
-            service: 'remote-ingest',
-            action: 'publisher_binary_frame',
-            remoteAddress: remoteIngestClientIp(req),
-            binaryNumber: publisherBinaryCount,
-            bytes: buf.length,
-            viewerCount: this.viewers.size,
-          }),
-        )
-      }
       for (const v of this.viewers) {
         if (v.readyState === WebSocket.OPEN) {
           v.send(buf, { binary: true })
@@ -486,16 +418,6 @@ export class RemoteIngestServerService {
         if (control.type === 'emory_sig_ping') {
           const seq = typeof control.seq === 'number' ? control.seq : 0
           const mobileConnected = !!(this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN)
-          console.log(
-            JSON.stringify({
-              service: 'remote-ingest',
-              action: 'sig_ping',
-              from: 'desktop',
-              seq,
-              remoteAddress: remoteIngestClientIp(req),
-              mobileConnected,
-            }),
-          )
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'emory_sig_pong', seq, mobileConnected }))
           }
@@ -564,16 +486,6 @@ export class RemoteIngestServerService {
         return
       }
       if (control.type === 'emory_sig_pong_relay') {
-        const seq = typeof control.seq === 'number' ? control.seq : 0
-        console.log(
-          JSON.stringify({
-            service: 'remote-ingest',
-            action: 'sig_pong_relay',
-            seq,
-            from: 'mobile',
-            remoteAddress: remoteIngestClientIp(req),
-          }),
-        )
         if (this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN) {
           this.desktopSig.send(text)
         }
@@ -726,10 +638,6 @@ export class RemoteIngestServerService {
       const baseUrl = `http://${req.headers.host ?? '127.0.0.1'}`
       const url = new URL(req.url ?? '/', baseUrl)
       const pathname = url.pathname
-
-      if (req.method === 'GET' && (pathname === '/health' || pathname.startsWith('/api/v1/'))) {
-        logRemoteIngestMobileHttpHit(req, pathname)
-      }
 
       if (req.method === 'GET' && pathname === '/health') {
         const body = JSON.stringify({
@@ -977,9 +885,34 @@ export class RemoteIngestServerService {
       bytes = await this.readRequestBody(req, MAX_CONVERSATION_UPLOAD_BYTES)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      console.error(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'conversation_upload_rejected',
+          remoteAddress: remoteIngestClientIp(req),
+          personId,
+          recordedAt,
+          mimeType,
+          durationMs: Number.isFinite(durationMs) ? durationMs : null,
+          error: message,
+        }),
+      )
       this.sendJson(res, 413, { success: false, error: message })
       return
     }
+
+    console.log(
+      JSON.stringify({
+        service: 'remote-ingest',
+        action: 'conversation_upload_received',
+        remoteAddress: remoteIngestClientIp(req),
+        personId,
+        recordedAt,
+        mimeType,
+        durationMs: Number.isFinite(durationMs) ? durationMs : null,
+        byteLength: bytes.length,
+      }),
+    )
 
     const result = await this.conversationIngestService.saveAndProcessBytes({
       personId,
@@ -988,6 +921,24 @@ export class RemoteIngestServerService {
       durationMs: Number.isFinite(durationMs) ? durationMs : null,
       audioBytes: new Uint8Array(bytes),
     })
+    console.log(
+      JSON.stringify({
+        service: 'remote-ingest',
+        action: result.success ? 'conversation_upload_processed' : 'conversation_upload_failed',
+        remoteAddress: remoteIngestClientIp(req),
+        personId,
+        recordedAt,
+        mimeType,
+        durationMs: Number.isFinite(durationMs) ? durationMs : null,
+        byteLength: bytes.length,
+        success: result.success,
+        recordingId: result.success ? result.recording.id : null,
+        memoryCount: result.success ? result.memories.length : 0,
+        transcriptStatus: result.success ? result.recording.transcriptStatus : null,
+        extractionStatus: result.success ? result.recording.extractionStatus : null,
+        error: result.success ? null : result.error,
+      }),
+    )
     this.sendJson(res, result.success ? 200 : 400, result)
   }
 

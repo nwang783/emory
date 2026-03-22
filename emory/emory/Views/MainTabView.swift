@@ -8,6 +8,7 @@ struct MainTabView: View {
     @State private var hasOpenedGlassesTab = false
     @State private var settings = AppSettings.shared
     @State private var recognitionStore = DesktopRecognitionStore.shared
+    @State private var captureDebugStore = ConversationCaptureDebugStore.shared
     @State private var showFullProfile = false
     @State private var profilePerson: Person?
     
@@ -65,6 +66,14 @@ struct MainTabView: View {
         .task(id: "\(settings.isMockMode)-\(settings.backendURL)") {
             recognitionStore.refreshConnection()
         }
+        .overlay(alignment: .top) {
+            if let banner = captureDebugStore.banner {
+                ConversationCaptureDebugBanner(state: banner)
+                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .overlay {
             if let presentation = recognitionStore.presentedRecognition {
                 RecognitionPopupView(
@@ -93,6 +102,76 @@ struct MainTabView: View {
                         }
                 }
             }
+        }
+    }
+}
+
+private struct ConversationCaptureDebugBanner: View {
+    let state: ConversationCaptureDebugStore.BannerState
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(accentColor.opacity(0.16))
+                    .frame(width: 34, height: 34)
+                Image(systemName: iconName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(accentColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(state.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(EmoryTheme.textPrimary)
+                Text(state.detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(EmoryTheme.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            if state.kind == .recording || state.kind == .uploading {
+                ProgressView()
+                    .tint(accentColor)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(accentColor.opacity(0.22), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 16, y: 6)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: state)
+    }
+
+    private var accentColor: Color {
+        switch state.kind {
+        case .recording:
+            return EmoryTheme.destructive
+        case .uploading:
+            return EmoryTheme.primary
+        case .uploaded:
+            return EmoryTheme.secondary
+        case .failed:
+            return .orange
+        }
+    }
+
+    private var iconName: String {
+        switch state.kind {
+        case .recording:
+            return "mic.fill"
+        case .uploading:
+            return "arrow.up.circle.fill"
+        case .uploaded:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
         }
     }
 }

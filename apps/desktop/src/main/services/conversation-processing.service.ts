@@ -116,7 +116,6 @@ export class ConversationProcessingService {
         recordingId: recording.id,
         provider: transcript.provider,
         transcriptLength: transcriptText.length,
-        transcriptPreview: transcriptText.slice(0, 160),
       })
       recording = this.conversationRepo.setTranscript(recording.id, transcriptText, transcript.provider) ?? recording
     } catch (error) {
@@ -171,7 +170,6 @@ export class ConversationProcessingService {
         summaryLength: extraction.summary.length,
         extractedMemoryCount: extraction.memories.length,
         uncertainItemCount: extraction.uncertainItems.length,
-        extractedMemories: extraction.memories.map((memory) => summarizeMemory(memory)),
       })
 
       recording = this.conversationRepo.setExtractionResult(recording.id, extraction) ?? recording
@@ -207,15 +205,12 @@ export class ConversationProcessingService {
         threshold: MEMORY_CONFIDENCE_THRESHOLD,
         acceptedCount: acceptedMemories.length,
         rejectedCount: rejectedMemories.length,
-        acceptedMemories: acceptedMemories.map((memory) => summarizeMemory(memory)),
-        rejectedMemories: rejectedMemories.map((memory) => summarizeMemory(memory)),
       })
 
       const memories = this.conversationRepo.addMemories(acceptedMemories)
       console.log('[memory-processing] memory insert complete', {
         recordingId: recording.id,
         insertedCount: memories.length,
-        insertedMemoryIds: memories.map((memory) => memory.id),
       })
       return { recording, memories }
     } catch (error) {

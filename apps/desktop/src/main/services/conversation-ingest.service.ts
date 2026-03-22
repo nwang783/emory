@@ -53,6 +53,14 @@ export class ConversationIngestService {
   ) {}
 
   async saveAndProcessBytes(input: SaveAndProcessBytesInput): Promise<SaveAndProcessBytesResult> {
+    console.log('[conversation-ingest] saveAndProcessBytes called', {
+      personId: input.personId,
+      recordedAt: input.recordedAt,
+      mimeType: input.mimeType,
+      durationMs: input.durationMs ?? null,
+      byteLength: input.audioBytes?.byteLength ?? 0,
+    })
+
     if (typeof input.personId !== 'string' || input.personId.length === 0) {
       return { success: false, error: 'personId is required' }
     }
@@ -90,8 +98,18 @@ export class ConversationIngestService {
         recordedAt: recordedAtDate,
       })
       audioPath = saved.audioPath
+      console.log('[conversation-ingest] audio saved', {
+        recordingId,
+        audioPath,
+        mimeType: input.mimeType,
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      console.error('[conversation-ingest] failed to save audio', {
+        personId: input.personId,
+        recordingId,
+        error: message,
+      })
       return { success: false, error: `Failed to save audio: ${message}` }
     }
 
@@ -101,6 +119,12 @@ export class ConversationIngestService {
       const active = this.encounterRepo.findActiveEncounter(input.personId, sessionId)
       encounterId = active?.id ?? null
     }
+    console.log('[conversation-ingest] encounter resolved', {
+      recordingId,
+      personId: input.personId,
+      sessionId: sessionId ?? null,
+      encounterId,
+    })
 
     let createdRecordingId: string | null = null
     try {
@@ -126,6 +150,13 @@ export class ConversationIngestService {
       }
 
       const result = await this.processingService.processRecording(processInput)
+      console.log('[conversation-ingest] processing complete', {
+        recordingId: result.recording.id,
+        personId: result.recording.personId,
+        transcriptStatus: result.recording.transcriptStatus,
+        extractionStatus: result.recording.extractionStatus,
+        memoryCount: result.memories.length,
+      })
       return { success: true, recording: result.recording, memories: result.memories }
     } catch (err) {
       if (createdRecordingId) {
@@ -135,6 +166,11 @@ export class ConversationIngestService {
         await this.storage.removeFile(audioPath)
       }
       const message = err instanceof Error ? err.message : String(err)
+      console.error('[conversation-ingest] processing failed', {
+        recordingId: createdRecordingId,
+        personId: input.personId,
+        error: message,
+      })
       return { success: false, error: `Failed to process recording: ${message}` }
     }
   }

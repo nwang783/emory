@@ -79,9 +79,6 @@ final class MicrophoneCaptureService {
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
-        let activeInput = session.currentRoute.inputs.first
-        print("[Mic] Starting capture: \(format.sampleRate)Hz, \(format.channelCount)ch, source=\(audioSource.rawValue), activePort=\(activeInput?.portName ?? "none")")
-
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self = self else { return }
             let level = Self.computeRMS(buffer)
@@ -125,19 +122,11 @@ final class MicrophoneCaptureService {
             queue: .main
         ) { [weak self] notification in
             guard let self = self, self.isCapturing else { return }
-            let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
-                .flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
-            let currentInput = AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? "none"
-            print("[Mic] Route changed: reason=\(reason?.rawValue ?? 99), input=\(currentInput)")
-
             // Restart engine to pick up new route
             if !self.audioEngine.isRunning {
-                print("[Mic] Engine stopped after route change, restarting...")
                 try? self.audioEngine.start()
             }
         }
-
-        print("[Mic] Capture started")
     }
 
     // MARK: - Stop Capture
@@ -154,7 +143,6 @@ final class MicrophoneCaptureService {
         isCapturing = false
         bufferQueue.sync { recentBuffers.removeAll() }
         levelContinuation?.yield(0.0)
-        print("[Mic] Capture stopped")
     }
 
     // MARK: - Get Recent Buffers (for future backend use)
@@ -170,7 +158,6 @@ final class MicrophoneCaptureService {
         recordingBuffers.removeAll()
         recordingFormat = audioEngine.inputNode.outputFormat(forBus: 0)
         isRecording = true
-        print("[Mic] Recording started")
     }
 
     func stopRecording() {
@@ -183,7 +170,6 @@ final class MicrophoneCaptureService {
             recordingDuration = Double(totalFrames) / format.sampleRate
         }
 
-        print("[Mic] Recording stopped: \(recordingBuffers.count) buffers, \(String(format: "%.1f", recordingDuration))s")
     }
 
     func startConversationRecording() throws {
@@ -269,7 +255,6 @@ final class MicrophoneCaptureService {
             // Merge all buffers into one
             let totalFrames = recordingBuffers.reduce(0) { $0 + Int($1.frameLength) }
             guard let mergedBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)) else {
-                print("[Mic] Failed to create merged buffer")
                 return
             }
 
@@ -293,7 +278,6 @@ final class MicrophoneCaptureService {
                 }
             }
             player.play()
-            print("[Mic] Playback started")
         } catch {
             print("[Mic] Playback failed: \(error)")
             isPlaying = false
@@ -309,7 +293,6 @@ final class MicrophoneCaptureService {
         audioPlayer = nil
         playbackEngine = nil
         isPlaying = false
-        print("[Mic] Playback stopped")
     }
 
     // MARK: - Audio Route Selection
@@ -318,11 +301,8 @@ final class MicrophoneCaptureService {
     private static func selectPreferredInput(source: AudioSource) {
         let session = AVAudioSession.sharedInstance()
         guard let availableInputs = session.availableInputs else {
-            print("[Mic] No available inputs to select from")
             return
         }
-
-        print("[Mic] Available inputs: \(availableInputs.map { "\($0.portName) (\($0.portType.rawValue))" })")
 
         switch source {
         case .iphone:
@@ -330,7 +310,6 @@ final class MicrophoneCaptureService {
             if let mic = builtIn {
                 do {
                     try session.setPreferredInput(mic)
-                    print("[Mic] Preferred input → iPhone built-in mic")
                 } catch {
                     print("[Mic] Failed to set preferred input to built-in: \(error.localizedDescription)")
                 }
@@ -356,12 +335,9 @@ final class MicrophoneCaptureService {
             if let bt = anyBluetooth {
                 do {
                     try session.setPreferredInput(bt)
-                    print("[Mic] Preferred input → \(bt.portName) (\(bt.portType.rawValue))")
                 } catch {
                     print("[Mic] Failed to set preferred input to Bluetooth: \(error.localizedDescription)")
                 }
-            } else {
-                print("[Mic] No Bluetooth input found — falling back to default")
             }
         }
     }

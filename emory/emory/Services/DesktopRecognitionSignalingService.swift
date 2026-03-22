@@ -48,33 +48,27 @@ final class DesktopRecognitionSignalingService {
 
     private func connectFromSettings() async {
         teardownSocket(status: .connecting)
-        print("[Signaling] Attempting connection...")
 
         guard !AppSettings.shared.isMockMode else {
-            print("[Signaling] Mock mode is ON — skipping signaling connection")
             teardownSocket(status: .disconnected)
             return
         }
 
         do {
             let client = try DesktopApiClient.fromSettings()
-            print("[Signaling] Fetching health from \(AppSettings.shared.backendURL)...")
             let health = try await client.fetchHealth()
             let url = try client.signalingWebSocketURL(health: health, role: "mobile")
-            print("[Signaling] Connecting WebSocket to \(url)...")
 
             let task = session.webSocketTask(with: url)
             webSocketTask = task
             task.resume()
             connectionStatus = .connected
             reconnectDelay = 1_000_000_000
-            print("[Signaling] Connected!")
 
             receiveTask = Task { [weak self] in
                 await self?.receiveLoop()
             }
         } catch {
-            print("[Signaling] Connection failed: \(error.localizedDescription)")
             connectionStatus = .error(error.localizedDescription)
             scheduleReconnect()
         }
@@ -102,29 +96,18 @@ final class DesktopRecognitionSignalingService {
     }
 
     private func handleTextMessage(_ text: String) async {
-        print("[Signaling] Received message: \(text.prefix(200))")
-
         guard let data = text.data(using: .utf8),
               let envelope = try? JSONDecoder().decode(DesktopSignalingEnvelope.self, from: data)
-        else {
-            print("[Signaling] Failed to decode envelope")
-            return
-        }
+        else { return }
 
         switch envelope.type {
         case "emory_sig_ping_relay":
             guard let relay = try? JSONDecoder().decode(DesktopSignalingPingRelay.self, from: data) else { return }
             sendPingRelayAck(seq: relay.seq)
         case "person_focus_changed":
-            print("[Signaling] Got person_focus_changed event!")
-            guard let event = try? JSONDecoder().decode(DesktopPersonFocusEvent.self, from: data) else {
-                print("[Signaling] Failed to decode DesktopPersonFocusEvent")
-                return
-            }
-            print("[Signaling] Person: \(event.person?.name ?? "nil"), reason: \(event.reason), seq: \(event.sequence)")
+            guard let event = try? JSONDecoder().decode(DesktopPersonFocusEvent.self, from: data) else { return }
             focusContinuation?.yield(event)
         default:
-            print("[Signaling] Unknown message type: \(envelope.type)")
             break
         }
     }
