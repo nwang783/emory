@@ -827,6 +827,106 @@ export class RemoteIngestServerService {
         return
       }
 
+      // POST /api/v1/people/{id}/enroll — receive JPEG from iOS, run face detection + embedding, store in DB
+      const enrollMatch = pathname.match(/^\/api\/v1\/people\/([^/]+)\/enroll$/)
+      if (req.method === 'POST' && enrollMatch) {
+        const personId = decodeURIComponent(enrollMatch[1] ?? '')
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => chunks.push(chunk))
+        req.on('end', async () => {
+          try {
+            const body = Buffer.concat(chunks)
+            const contentType = req.headers['content-type'] ?? ''
+
+            let jpegData: Buffer
+            let enrollName: string | undefined
+
+            if (contentType.includes('application/json')) {
+              // JSON body with base64 image
+              const json = JSON.parse(body.toString('utf8'))
+              if (!json.image) {
+                this.sendJson(res, 400, { success: false, error: 'Missing "image" field (base64 JPEG)' })
+                return
+              }
+              jpegData = Buffer.from(json.image, 'base64')
+              enrollName = json.name
+            } else {
+              // Raw JPEG body
+              jpegData = body
+            }
+
+            if (jpegData.length < 100) {
+              this.sendJson(res, 400, { success: false, error: 'Image data too small' })
+              return
+            }
+
+            const faceService = this.bridgeLive?.getFaceService()
+            if (!faceService) {
+              this.sendJson(res, 503, { success: false, error: 'Face service not initialized yet' })
+              return
+            }
+
+            const peopleRepo = this.bridgeLive?.peopleRepo
+            if (!peopleRepo) {
+              this.sendJson(res, 503, { success: false, error: 'Database not available' })
+              return
+            }
+
+            // Decode JPEG to raw RGBA using sharp
+            const sharp = (await import('sharp')).default
+            const { data: rawPixels, info } = await sharp(jpegData)
+              .ensureAlpha()
+              .raw()
+              .toBuffer({ resolveWithObject: true })
+
+            console.log(`[Enroll] Processing ${info.width}x${info.height} image for person ${personId}`)
+
+            // Detect faces
+            const detections = await faceService.detectFaces(rawPixels, info.width, info.height)
+            if (detections.length === 0) {
+              this.sendJson(res, 200, { success: false, error: 'No face detected in the image. Make sure the person is clearly visible.' })
+              return
+            }
+
+            // Extract embedding from the largest/first face
+            const primaryFace = detections[0]
+            const embedding = await faceService.extractEmbedding(rawPixels, info.width, info.height, primaryFace)
+
+            // Generate thumbnail
+            let thumbnailBase64: string | undefined
+            try {
+              const cropX = Math.max(0, Math.round(primaryFace.bbox.x))
+              const cropY = Math.max(0, Math.round(primaryFace.bbox.y))
+              const cropW = Math.max(1, Math.min(Math.round(primaryFace.bbox.width), info.width - cropX))
+              const cropH = Math.max(1, Math.min(Math.round(primaryFace.bbox.height), info.height - cropY))
+              const thumbBuffer = await sharp(rawPixels, { raw: { width: info.width, height: info.height, channels: 4 } })
+                .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
+                .resize(128, 128, { fit: 'cover' })
+                .jpeg({ quality: 80 })
+                .toBuffer()
+              thumbnailBase64 = thumbBuffer.toString('base64')
+            } catch {
+              // Thumbnail generation failed, proceed without it
+            }
+
+            // Store embedding
+            const saved = peopleRepo.addEmbedding(personId, embedding, 'live_capture', thumbnailBase64)
+            console.log(`[Enroll] Successfully enrolled face for person ${personId}, embeddingId=${saved.id}`)
+
+            this.sendJson(res, 200, {
+              success: true,
+              embeddingId: saved.id,
+              facesDetected: detections.length,
+            })
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error(`[Enroll] Error:`, message)
+            this.sendJson(res, 500, { success: false, error: message })
+          }
+        })
+        return
+      }
+
       if (req.method === 'GET' && pathname === '/viewer') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
         res.end(VIEWER_HTML(req.headers.host ?? '127.0.0.1:' + String(persisted.signalingPort)))

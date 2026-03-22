@@ -12,6 +12,9 @@ struct PersonDetailView: View {
     @State private var newNoteSubtitle = ""
     @State private var showRemoveConfirmation = false
     @State private var showEnrollConfirmation = false
+    @State private var isEnrolling = false
+    @State private var enrollmentResult: String?
+    @State private var showEnrollmentResult = false
     @State private var detailPerson: Person?
     @State private var recentMemories: [PersonMemory] = []
     @State private var recentEncounters: [EncounterSummary] = []
@@ -239,11 +242,16 @@ struct PersonDetailView: View {
         }
         .alert("Enroll Face", isPresented: $showEnrollConfirmation) {
             Button("Start Enrollment") {
-                // TODO: POST /enroll with person.id
+                Task { await enrollFace() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will register \(resolvedPerson.name)'s face so the glasses can recognize them. Make sure they're in front of the camera.")
+        }
+        .alert(isEnrolling ? "Enrolling..." : "Enrollment Result", isPresented: $showEnrollmentResult) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(enrollmentResult ?? "")
         }
         .sheet(isPresented: $showAddNote) {
             AddNoteSheet(
@@ -454,6 +462,53 @@ struct PersonDetailView: View {
         case "routine": return "clock"
         default: return "sparkles"
         }
+    }
+
+    private func enrollFace() async {
+        isEnrolling = true
+        enrollmentResult = "Capturing frame and sending to desktop for enrollment..."
+        showEnrollmentResult = true
+
+        do {
+            let client = try DesktopApiClient.fromSettings()
+
+            // Grab the current frame from the streaming view model
+            // If streaming, use the live frame; otherwise prompt user
+            guard let currentFrame = await getEnrollmentFrame() else {
+                enrollmentResult = "No video frame available. Start streaming from the Glasses tab first, then come back and try again."
+                isEnrolling = false
+                return
+            }
+
+            // Convert to JPEG
+            guard let jpegData = currentFrame.jpegData(compressionQuality: 0.8) else {
+                enrollmentResult = "Failed to encode image. Please try again."
+                isEnrolling = false
+                return
+            }
+
+            print("[Enroll] Sending \(jpegData.count / 1024)KB JPEG for person \(person.id)")
+
+            let response = try await client.enrollFace(personId: person.id, jpegData: jpegData)
+
+            if response.success {
+                enrollmentResult = "\(resolvedPerson.name)'s face has been enrolled successfully! The glasses will now recognize them."
+                print("[Enroll] Success! embeddingId=\(response.embeddingId ?? "nil")")
+            } else {
+                enrollmentResult = response.error ?? "Enrollment failed. Make sure the person's face is clearly visible."
+                print("[Enroll] Failed: \(response.error ?? "unknown")")
+            }
+        } catch {
+            enrollmentResult = "Could not connect to desktop: \(error.localizedDescription)"
+            print("[Enroll] Error: \(error.localizedDescription)")
+        }
+
+        isEnrolling = false
+    }
+
+    /// Gets the latest frame from the active streaming session for enrollment
+    private func getEnrollmentFrame() async -> UIImage? {
+        return StreamViewModel.currentEnrollmentFrame
     }
 
     private func loadDetail() async {

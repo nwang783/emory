@@ -57,10 +57,17 @@ final class StreamViewModel {
     private var lastAudioLevelUpdate: Date = .distantPast
     private var isStreaming: Bool = false
 
+    // Shared frame for enrollment — other views can grab the latest frame
+    private static weak var _activeInstance: StreamViewModel?
+    static var currentEnrollmentFrame: UIImage? {
+        _activeInstance?.currentFrame
+    }
+
     // MARK: - Init (lightweight — no SDK or stream work)
 
     init() {
         log("ViewModel ready")
+        Self._activeInstance = self
     }
 
     // MARK: - Actions
