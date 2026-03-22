@@ -92,6 +92,21 @@ struct MainTabView: View {
                             }
                         }
                 }
+                .overlay {
+                    if let presentation = recognitionStore.presentedRecognition {
+                        RecognitionPopupView(
+                            presentation: presentation,
+                            onViewProfile: {
+                                // Switch to the new person's profile
+                                profilePerson = presentation.resolvedPerson
+                                recognitionStore.dismissPresentedRecognition()
+                            },
+                            onDismiss: {
+                                recognitionStore.dismissPresentedRecognition()
+                            }
+                        )
+                    }
+                }
             }
         }
     }
