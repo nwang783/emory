@@ -102,11 +102,12 @@ final class StreamViewModel {
                 self.log("Session started successfully")
                 self.bridgeService.sendSessionStart()
 
-                // Start iPhone mic capture alongside glasses video
+                // Start mic capture alongside glasses video — route depends on user setting
+                let audioSrc = AppSettings.shared.audioSource
                 do {
-                    try self.micService.start()
+                    try self.micService.start(audioSource: audioSrc)
                     self.isMicCapturing = true
-                    self.log("Microphone capture started")
+                    self.log("Microphone capture started (source: \(audioSrc.rawValue))")
                 } catch {
                     self.log("Mic start failed: \(error.localizedDescription)", level: .error)
                 }
@@ -148,7 +149,7 @@ final class StreamViewModel {
         guard !isMicCapturing else { return }
         log("Starting mic-only mode (no glasses)...")
         do {
-            try micService.start()
+            try micService.start(audioSource: AppSettings.shared.audioSource)
             isMicCapturing = true
 
             // Subscribe to mic level if not already
@@ -338,7 +339,7 @@ final class StreamViewModel {
         log("Bridge disconnected")
     }
 
-    /// `ws://host:port/ingest?role=publisher` from Settings **http(s)://** base URL (same as Desktop API / Test Connection).
+    /// `ws://host:port/ingest?role=publisher` from Settings **http(s)://** base URL (same host + port as Test Connection), e.g. `http://10.0.0.237:18763` → `ws://10.0.0.237:18763/ingest?role=publisher`.
     private static func webSocketIngestURL(fromBackendHTTP raw: String) -> String? {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
@@ -359,7 +360,14 @@ final class StreamViewModel {
 
         let wsURL: String?
         if raw.hasPrefix("ws://") || raw.hasPrefix("wss://") {
-            wsURL = raw
+            // Ensure ws:// URLs include the /ingest?role=publisher path.
+            // Old bridge-server used bare ws://host:port; desktop remote-ingest requires /ingest.
+            var url = raw
+            while url.hasSuffix("/") { url.removeLast() }
+            if !url.contains("/ingest") {
+                url += "/ingest?role=publisher"
+            }
+            wsURL = url
         } else if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
             wsURL = Self.webSocketIngestURL(fromBackendHTTP: raw)
         } else {

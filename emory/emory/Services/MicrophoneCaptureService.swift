@@ -49,20 +49,24 @@ final class MicrophoneCaptureService {
 
     // MARK: - Start Capture
 
-    func start() throws {
+    func start(audioSource: AudioSource = .iphone) throws {
         guard !isCapturing else { return }
 
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [
             .defaultToSpeaker,
-            .allowBluetooth
+            .allowBluetooth,
+            .allowBluetoothA2DP
         ])
         try session.setActive(true)
+
+        Self.selectPreferredInput(source: audioSource)
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
-        print("[Mic] Starting capture: \(format.sampleRate)Hz, \(format.channelCount)ch")
+        let activeInput = session.currentRoute.inputs.first
+        print("[Mic] Starting capture: \(format.sampleRate)Hz, \(format.channelCount)ch, source=\(audioSource.rawValue), activePort=\(activeInput?.portName ?? "none")")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self = self else { return }
@@ -207,6 +211,60 @@ final class MicrophoneCaptureService {
         playbackEngine = nil
         isPlaying = false
         print("[Mic] Playback stopped")
+    }
+
+    // MARK: - Audio Route Selection
+
+    /// Sets `AVAudioSession.preferredInput` to the built-in mic or a Bluetooth (Ray-Ban) input.
+    private static func selectPreferredInput(source: AudioSource) {
+        let session = AVAudioSession.sharedInstance()
+        guard let availableInputs = session.availableInputs else {
+            print("[Mic] No available inputs to select from")
+            return
+        }
+
+        print("[Mic] Available inputs: \(availableInputs.map { "\($0.portName) (\($0.portType.rawValue))" })")
+
+        switch source {
+        case .iphone:
+            let builtIn = availableInputs.first { $0.portType == .builtInMic }
+            if let mic = builtIn {
+                do {
+                    try session.setPreferredInput(mic)
+                    print("[Mic] Preferred input → iPhone built-in mic")
+                } catch {
+                    print("[Mic] Failed to set preferred input to built-in: \(error.localizedDescription)")
+                }
+            }
+
+        case .rayBans:
+            let bluetooth = availableInputs.first { port in
+                let isBT = [
+                    AVAudioSession.Port.bluetoothHFP,
+                    AVAudioSession.Port.bluetoothA2DP,
+                    AVAudioSession.Port.bluetoothLE
+                ].contains(port.portType)
+                let name = port.portName.lowercased()
+                let isMeta = name.contains("ray-ban") || name.contains("meta")
+                return isBT && isMeta
+            }
+            // If no Meta device found, fall back to any Bluetooth input
+            let anyBluetooth = bluetooth ?? availableInputs.first { port in
+                [AVAudioSession.Port.bluetoothHFP,
+                 AVAudioSession.Port.bluetoothA2DP,
+                 AVAudioSession.Port.bluetoothLE].contains(port.portType)
+            }
+            if let bt = anyBluetooth {
+                do {
+                    try session.setPreferredInput(bt)
+                    print("[Mic] Preferred input → \(bt.portName) (\(bt.portType.rawValue))")
+                } catch {
+                    print("[Mic] Failed to set preferred input to Bluetooth: \(error.localizedDescription)")
+                }
+            } else {
+                print("[Mic] No Bluetooth input found — falling back to default")
+            }
+        }
     }
 
     // MARK: - RMS Computation

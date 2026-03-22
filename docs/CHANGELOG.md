@@ -1,5 +1,83 @@
 # Documentation changelog
 
+## 2026-03-22 — iOS: configurable audio source (iPhone mic vs Ray-Ban glasses)
+
+- **Model** — [`AppSettings.swift`](../emory/emory/Models/AppSettings.swift): new `audioSource` setting (`AudioSource` enum: `.iphone` / `.rayBans`), persisted via `UserDefaults`. Defaults to iPhone mic.
+- **UI** — [`SettingsView.swift`](../emory/emory/Views/SettingsView.swift): dropdown picker in the APPLICATION section to select which microphone streams to the desktop.
+- **Service** — [`MicrophoneCaptureService.swift`](../emory/emory/Services/MicrophoneCaptureService.swift): `start(audioSource:)` now calls `AVAudioSession.setPreferredInput` — selects built-in mic for `.iphone`, or the Bluetooth HFP/A2DP Meta glasses input for `.rayBans` (falls back to any Bluetooth input if no Meta device name match). Added `.allowBluetoothA2DP` session option.
+- **ViewModel** — [`StreamViewModel.swift`](../emory/emory/ViewModels/StreamViewModel.swift): reads `AppSettings.shared.audioSource` when starting mic capture in both full session and mic-only modes.
+
+## 2026-03-22 — Remote audio playback with mute/unmute
+
+- **Renderer** — [`useRemoteIngestViewer.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts): handles `MSG_AUDIO_CHUNK` (type 2) binary messages — decodes PCM16 payload to Float32 and plays via Web Audio API with gapless scheduling (`AudioBufferSourceNode` chain). Audio is muted/unmuted via a `GainNode` so playback timing stays in sync. Exposes `isMuted` / `toggleMute`.
+- **Renderer** — [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts): threads `isMuted` / `toggleMute` through from the ingest viewer hook.
+- **UI** — [`WebcamFeed.tsx`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx): mute/unmute button (Volume2/VolumeOff icons) visible in remote mode when streaming. Defaults to unmuted.
+
+## 2026-03-22 — Video streaming: 30fps target, quality bump, newest-wins frame dropping
+
+- **iOS** — [`RealMetaWearablesService.swift`](../emory/emory/Services/RealMetaWearablesService.swift): SDK `frameRate` **15 → 30**. [`MockMetaWearablesService.swift`](../emory/emory/Services/MockMetaWearablesService.swift): mock sleep **66ms → 33ms** (~30fps). [`BridgeServerService.swift`](../emory/emory/Services/BridgeServerService.swift): JPEG `compressionQuality` **0.3 → 0.7** for decent quality on the wire.
+- **Desktop renderer** — [`useRemoteIngestViewer.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts): **newest-wins frame dropping** — max one `createImageBitmap` decode in flight at a time; incoming frames while decoding overwrite a single pending slot (previous pending frames are dropped). Canvas dimensions only update when they change (no per-frame reallocation). Heartbeat now reports `framesDropped`.
+- **Viewer HTML** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts) `/viewer` page: same newest-wins decode pattern with live FPS and dropped-frame counters.
+
+## 2026-03-21 — Remote ingest: bridge-server parity copy + `ingest-ws` transport label
+
+- **Settings** — [`RemoteIngestSettings.tsx`](../apps/desktop/src/renderer/modules/settings/components/RemoteIngestSettings.tsx): WebRTC toggle reframed as **experimental**; copy states default **`/ingest`** matches **`apps/bridge-server`** and current iOS does not open **`/signaling`**.
+- **Camera** — [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts): transport **`jpeg-ws` → `ingest-ws`**; internal **`ingestWsRemote`**; status hints. [`useRemoteIngestViewer.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts) terminal **`transport: ingest-ws`**. [`WebcamFeed.tsx`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx) start button **ingest / bridge**.
+- **Types** — [`remote-ingest.types.ts`](../apps/desktop/src/main/services/remote-ingest.types.ts) comment on **`webrtcVideoPreferred`** aligned with bridge vs WebRTC.
+- **Docs** — [`apps/desktop.md`](./apps/desktop.md), [`remote-ingest-tailscale.md`](./architecture/remote-ingest-tailscale.md), [`ios-remote-ingest-client.md`](./architecture/ios-remote-ingest-client.md).
+- **iOS** — [`SettingsView.swift`](../emory/emory/Views/SettingsView.swift) Desktop URL hint matches desktop wording (bridge **`/ingest`**, WebRTC off).
+
+## 2026-03-21 — WebRTC signaling: clear ping state on `stop`
+
+- **Renderer** — [`useRemoteIngestWebRtc.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts): `stop()` now resets **`signalingOpenedAtRef`**, **`pingSeqRef`**, and outstanding sig ping / relay deadline refs so **`sig_ping_timeout`** does not fire for a stale seq after **`signaling_stall`** bounce or reconnect.
+
+## 2026-03-21 — `@emory/bridge-live`: bridge face pipeline inside Electron `/ingest`
+
+- **Package** — [`packages/bridge-live`](../packages/bridge-live/): **`FrameProcessor`** (JPEG → face detect/match → DB), shared by standalone bridge and desktop.
+- **Bridge server** — [`apps/bridge-server`](../apps/bridge-server/): depends on `@emory/bridge-live`; removed local `frame-processor.ts`.
+- **Desktop main** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): on **`MSG_VIDEO_FRAME`** from publisher, runs same pipeline and sends **`face_result`** JSON to the phone; still relays binary to viewers. [`face.ipc.ts`](../apps/desktop/src/main/ipc/face.ipc.ts) **`getMainFaceService()`**; [`index.ts`](../apps/desktop/src/main/index.ts) wires `peopleRepo` + face getter. [`electron.vite.config.ts`](../apps/desktop/electron.vite.config.ts) bundles `@emory/bridge-live`.
+- **Docs** — [bridge-live-and-desktop.md](./architecture/bridge-live-and-desktop.md); [bridge-server README](../apps/bridge-server/README.md) code index.
+
+## 2026-03-21 — Troubleshooting: `better-sqlite3` Node ABI mismatch
+
+- **Docs** — [better-sqlite3-node-version.md](./troubleshooting/better-sqlite3-node-version.md); [apps/bridge-server/README.md](../apps/bridge-server/README.md) short fix + link.
+- **Root** — `package.json` script **`rebuild:better-sqlite3`**: `npm rebuild better-sqlite3` (run from repo root for bridge-server / Node).
+- **Electron** — `scripts/rebuild-electron-native.cjs` runs `electron-rebuild` with **repo root** cwd; root **`postinstall`** and **`rebuild:electron-native`** use it so hoisted `better-sqlite3` matches Electron’s ABI (fixes `NODE_MODULE_VERSION` when desktop ran rebuild from `apps/desktop` only).
+
+## 2026-03-21 — Remote ingest: ping/pong, 5s bounce, terminal logs, WebRTC parity
+
+- **Desktop main** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): JSON **`ingest_ping` / `ingest_pong` / `ingest_ping_relay` / `ingest_pong_relay`** on **`/ingest`**; **`emory_sig_ping` / `emory_sig_pong` / `emory_sig_ping_relay` / `emory_sig_pong_relay`** on **`/signaling`**; terminal JSON for viewer/publisher/signaling open/close and pings.
+- **Desktop IPC** — [`remote-ingest.ipc.ts`](../apps/desktop/src/main/ipc/remote-ingest.ipc.ts) **`remote-ingest:log-terminal-event`**; [`preload`](../apps/desktop/src/preload/index.ts) **`remoteIngest.logTerminalEvent`** for renderer failures (ping timeout, bounce, relay timeout).
+- **Renderer** — [`useRemoteIngestViewer.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts): **5s** heartbeat + **`ingest_ping`**, **5s** bounce waiting publisher / **10s** stuck connecting; [`useRemoteIngestWebRtc.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestWebRtc.ts): same ping pattern + **5s** signaling stall bounce; [`remote-ingest-debug.ts`](../apps/desktop/src/renderer/modules/camera/lib/remote-ingest-debug.ts) **`logRemoteIngestTerminal`**.
+- **iOS** — [`BridgeServerService.swift`](../../emory/emory/Services/BridgeServerService.swift): responds to **`ingest_ping_relay`** with **`ingest_pong_relay`** (round-trip with desktop viewer).
+- **Docs** — [remote-ingest-camera-debug.md](./apps/remote-ingest-camera-debug.md) (HTTP → `ws://host:port/ingest` flow, e.g. `10.0.0.237:18763`).
+
+## 2026-03-21 — Camera: remote JPEG debug + `feedReady` while waiting
+
+- **Renderer** — [`useRemoteIngestViewer.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts): **`console.info`** lines prefixed **`[Emory:RemoteIngest]`** (phase, open/close/errors, **3s heartbeat**, frame counters, **`jpeg_ws_bounce`** reconnect if **`waiting_publisher`** ≥ 6s or **`CONNECTING`** ≥ 12s). [`remote-ingest-debug.ts`](../apps/desktop/src/renderer/modules/camera/lib/remote-ingest-debug.ts).
+- **Renderer** — [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts): **`feedReady`** for remote uses **`isActive`** (not only `phase === 'streaming'`) so **WebcamFeed** detection/overlay loops run while waiting for the first JPEG; detection still skips until `captureFrame()` has pixels.
+- **Docs** — [remote-ingest-camera-debug.md](./apps/remote-ingest-camera-debug.md).
+
+## 2026-03-21 — iOS video ingest: HTTP Settings → WebSocket `/ingest`
+
+- **iOS** — [`StreamViewModel.swift`](../../emory/emory/ViewModels/StreamViewModel.swift): derive **`ws://…/ingest?role=publisher`** from **`http(s)://`** Desktop URL when starting stream (no separate `ws://` in Settings required). [`SettingsView`](../../emory/emory/Views/SettingsView.swift) copy updated.
+- **Desktop** — Default **`webrtcVideoPreferred: false`** so **Camera** uses **JPEG `/ingest`** viewer with current iOS publisher; turn **Prefer WebRTC video** on when the phone implements **`/signaling`**. [`remote-ingest.types.ts`](../apps/desktop/src/main/services/remote-ingest.types.ts), [`RemoteIngestSettings.tsx`](../apps/desktop/src/renderer/modules/settings/components/RemoteIngestSettings.tsx), [`remote-ingest.store.ts`](../apps/desktop/src/renderer/shared/stores/remote-ingest.store.ts).
+
+## 2026-03-21 — Remote ingest default: LAN-first (`all`), iOS ATS plist fix
+
+- **Desktop** — Default **`bindMode`** is **`all`** (`0.0.0.0`, no Tailscale required for same-Wi‑Fi). [`remote-ingest.types.ts`](../apps/desktop/src/main/services/remote-ingest.types.ts), [`RemoteIngestSettings.tsx`](../apps/desktop/src/renderer/modules/settings/components/RemoteIngestSettings.tsx) form default aligned.
+- **iOS** — [`Info.plist`](../../emory/emory/Info.plist): single **`NSAppTransportSecurity`** dict with **`NSAllowsLocalNetworking`** + **`NSAllowsArbitraryLoads`** (removed duplicate key that overwrote the first). [`SettingsView`](../../emory/emory/Views/SettingsView.swift): stress **http://** vs **https://** TLS errors.
+
+## 2026-03-21 — iOS Desktop URL guidance + connection logging
+
+- **iOS** — [`SettingsView.swift`](../../emory/emory/Views/SettingsView.swift): clarify **http://** base URL (LAN e.g. `10.0.0.237:18763`), not `ws://`. [`DesktopApiClient.swift`](../../emory/emory/Services/DesktopApiClient.swift): trim trailing `/`, reject non-http(s) schemes with a clear error. [`DesktopConnectionStore.swift`](../../emory/emory/ViewModels/DesktopConnectionStore.swift): **`os.Logger`** on Test Connection.
+- **Desktop** — [`remote-ingest-server.service.ts`](../apps/desktop/src/main/services/remote-ingest-server.service.ts): structured JSON log line for **`GET /health`** and **`GET /api/v1/*`** (`mobile_http_hit`).
+- **Docs** — [ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md) “Desktop URL” table.
+
+## 2026-03-21 — Camera: `remotePhase` from `useCameraFeed`
+
+- **Renderer** — [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts) exposes **`remotePhase`** (JPEG or WebRTC ingest phase); [`WebcamFeed.tsx`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx) destructures it for “waiting for publisher” / “connecting” UI (fixes undefined `remotePhase`).
+
 ## 2026-03-21 — Remote ingest: Tailscale + local LAN bind mode
 
 - **Desktop** — [`remote-ingest.types.ts`](../apps/desktop/src/main/services/remote-ingest.types.ts): bind mode **`tailscale_lan`** (default): listen **`0.0.0.0`**, list **100.x then other LAN** IPv4s via [`buildEffectiveAddresses`](../apps/desktop/src/main/services/remote-ingest-network.ts). [`GET /health`](../apps/desktop/src/main/services/remote-ingest-server.service.ts) + UDP beacon include **`advertisedAddresses`**. Settings + IPC + preload + store updated.

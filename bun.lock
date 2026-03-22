@@ -11,6 +11,7 @@
       "name": "@emory/bridge-server",
       "version": "0.1.0",
       "dependencies": {
+        "@emory/bridge-live": "workspace:*",
         "@emory/core": "workspace:*",
         "@emory/db": "workspace:*",
         "sharp": "^0.33.0",
@@ -27,6 +28,7 @@
       "dependencies": {
         "@electron-toolkit/preload": "^3",
         "@electron-toolkit/utils": "^3",
+        "@emory/bridge-live": "workspace:*",
         "@emory/core": "workspace:*",
         "@emory/db": "workspace:*",
         "@emory/ingest-protocol": "workspace:*",
@@ -69,6 +71,18 @@
     "apps/mobile": {
       "name": "@emory/mobile",
       "version": "0.0.1",
+    },
+    "packages/bridge-live": {
+      "name": "@emory/bridge-live",
+      "version": "0.0.1",
+      "dependencies": {
+        "@emory/core": "workspace:*",
+        "@emory/db": "workspace:*",
+        "sharp": "^0.33.0",
+      },
+      "devDependencies": {
+        "typescript": "^5.7.0",
+      },
     },
     "packages/core": {
       "name": "@emory/core",
@@ -194,6 +208,8 @@
     "@electron/universal": ["@electron/universal@2.0.1", "", { "dependencies": { "@electron/asar": "^3.2.7", "@malept/cross-spawn-promise": "^2.0.0", "debug": "^4.3.1", "dir-compare": "^4.2.0", "fs-extra": "^11.1.1", "minimatch": "^9.0.3", "plist": "^3.1.0" } }, "sha512-fKpv9kg4SPmt+hY7SVBnIYULE9QJl8L3sCfcBsnqbJwwBwAeTLokJ9TRt9y7bK0JAzIW2y78TVVjvnQEms/yyA=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.9.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-VYi5+ZVLhpgK4hQ0TAjiQiZ6ol0oe4mBx7mVv7IflsiEp0OWoVsp/+f9Vc1hOhE0TtkORVrI1GvzyreqpgWtkA=="],
+
+    "@emory/bridge-live": ["@emory/bridge-live@workspace:packages/bridge-live"],
 
     "@emory/bridge-server": ["@emory/bridge-server@workspace:apps/bridge-server"],
 

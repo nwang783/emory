@@ -1,12 +1,12 @@
 import sharp from 'sharp'
 import type { FaceService, FaceDetection, KnownFaceEntry } from '@emory/core'
 import type { PeopleRepository } from '@emory/db'
-import type { FaceMatchResult } from './protocol.js'
+import type { FaceMatchResult, FrameResult } from './types.js'
 
-// MARK: - Frame Processor
-// Newest-wins queue: always processes the most recent frame.
-// Drops stale frames if a new one arrives during processing.
-
+/**
+ * Newest-wins queue: processes the most recent frame; drops stale frames during processing.
+ * Shared by **apps/bridge-server** (standalone Meta Ray-Bans relay) and **desktop** remote ingest `/ingest` publisher path.
+ */
 export class FrameProcessor {
   private faceService: FaceService | null = null
   private peopleRepo: PeopleRepository
@@ -16,20 +16,27 @@ export class FrameProcessor {
   private matchThreshold = 0.45
   private detectionThreshold = 0.35
 
-  // Track currently visible people (for audio association)
   visiblePersonIds: Set<string> = new Set()
   private visibilityTimeout: Map<string, NodeJS.Timeout> = new Map()
 
-  constructor(
-    peopleRepo: PeopleRepository,
-    onResult: (result: FrameResult) => void,
-  ) {
+  constructor(peopleRepo: PeopleRepository, onResult: (result: FrameResult) => void) {
     this.peopleRepo = peopleRepo
     this.onResult = onResult
   }
 
-  setFaceService(service: FaceService): void {
+  setFaceService(service: FaceService | null): void {
     this.faceService = service
+  }
+
+  /** Clear timers and pending work (call when publisher disconnects). */
+  dispose(): void {
+    for (const t of this.visibilityTimeout.values()) {
+      clearTimeout(t)
+    }
+    this.visibilityTimeout.clear()
+    this.visiblePersonIds.clear()
+    this.pendingFrame = null
+    this.processing = false
   }
 
   async enqueue(jpeg: Buffer, width: number, height: number, timestamp: number): Promise<void> {
@@ -49,7 +56,7 @@ export class FrameProcessor {
         const result = await this.processFrame(frame.jpeg, frame.width, frame.height, frame.timestamp)
         this.onResult(result)
       } catch (err) {
-        console.error('[FrameProcessor] Error:', err instanceof Error ? err.message : err)
+        console.error('[BridgeLive/FrameProcessor] Error:', err instanceof Error ? err.message : err)
       }
     }
     this.processing = false
@@ -67,7 +74,6 @@ export class FrameProcessor {
       return { matches: [], unknowns: 0, processingMs: 0, timestamp }
     }
 
-    // Decode JPEG to raw RGBA
     const decoded = await sharp(jpeg)
       .raw()
       .ensureAlpha()
@@ -77,7 +83,6 @@ export class FrameProcessor {
     const width = info.width
     const height = info.height
 
-    // Detect faces
     let detections: FaceDetection[]
     try {
       detections = await this.faceService.detectFaces(rgba, width, height, 4, this.detectionThreshold)
@@ -85,7 +90,6 @@ export class FrameProcessor {
       return { matches: [], unknowns: 0, processingMs: performance.now() - start, timestamp }
     }
 
-    // Build known entries from DB
     const allEmbeddings = this.peopleRepo.getAllEmbeddings()
     const knownEntries: KnownFaceEntry[] = allEmbeddings.map((e) => ({
       personId: e.personId,
@@ -102,7 +106,6 @@ export class FrameProcessor {
         const match = this.faceService.findBestMatch(embedding, knownEntries, this.matchThreshold)
 
         if (match) {
-          // Look up relationship from DB
           const person = this.peopleRepo.findById(match.personId)
           matches.push({
             personId: match.personId,
@@ -112,7 +115,6 @@ export class FrameProcessor {
             bbox: detection.bbox,
           })
 
-          // Update visibility tracking
           this.markVisible(match.personId)
           this.peopleRepo.updateLastSeen(match.personId)
         } else {
@@ -132,24 +134,15 @@ export class FrameProcessor {
   }
 
   private markVisible(personId: string): void {
-    // Clear any pending removal timeout
     const existing = this.visibilityTimeout.get(personId)
     if (existing) clearTimeout(existing)
 
     this.visiblePersonIds.add(personId)
 
-    // Remove after 5 seconds of not being seen
     const timeout = setTimeout(() => {
       this.visiblePersonIds.delete(personId)
       this.visibilityTimeout.delete(personId)
     }, 5000)
     this.visibilityTimeout.set(personId, timeout)
   }
-}
-
-export interface FrameResult {
-  matches: FaceMatchResult[]
-  unknowns: number
-  processingMs: number
-  timestamp: number
 }

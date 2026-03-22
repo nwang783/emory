@@ -11,7 +11,9 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean",
-    "postinstall": "npm --prefix apps/desktop run postinstall"
+    "postinstall": "node scripts/rebuild-electron-native.cjs",
+    "rebuild:better-sqlite3": "npm rebuild better-sqlite3",
+    "rebuild:electron-native": "node scripts/rebuild-electron-native.cjs"
   },
   "devDependencies": {
     "turbo": "^2"
