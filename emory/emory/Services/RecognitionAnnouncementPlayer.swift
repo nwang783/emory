@@ -5,8 +5,9 @@ import Foundation
 final class RecognitionAnnouncementPlayer {
     static let shared = RecognitionAnnouncementPlayer()
 
-    private var audioPlayer: AVAudioPlayer?
+    private var player: AVPlayer?
     private var sessionSnapshot: MediaPlaybackAudioSession.Snapshot?
+    private var tempAudioURL: URL?
 
     private init() {}
 
@@ -19,7 +20,7 @@ final class RecognitionAnnouncementPlayer {
             "personId=\(personId) bytes=\(response.audioData.count) mime=\(response.mimeType) " +
             "fingerprint=\(response.fingerprint ?? "none")"
         )
-        try await playAudio(data: response.audioData)
+        try await playAudio(data: response.audioData, mimeType: response.mimeType)
     }
 
     func stop() {
@@ -27,7 +28,7 @@ final class RecognitionAnnouncementPlayer {
         restoreAudioSessionIfNeeded()
     }
 
-    private func playAudio(data: Data) async throws {
+    private func playAudio(data: Data, mimeType: String) async throws {
         guard !data.isEmpty else {
             throw NSError(domain: "RecognitionAnnouncementPlayer", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Announcement audio was empty"
@@ -38,29 +39,35 @@ final class RecognitionAnnouncementPlayer {
 
         let session = AVAudioSession.sharedInstance()
         logAudioSession("before-playback-config", session: session)
-        sessionSnapshot = try MediaPlaybackAudioSession.begin(
-            mode: .spokenAudio,
-            options: [
-                .duckOthers,
-                .interruptSpokenAudioAndMixWithOthers,
-            ]
-        )
+        sessionSnapshot = try MediaPlaybackAudioSession.begin(mode: .moviePlayback)
         logAudioSession("after-playback-config", session: session)
 
-        let player = try AVAudioPlayer(data: data)
-        player.prepareToPlay()
+        let audioURL = try writeTempAudioFile(data: data, mimeType: mimeType)
+        tempAudioURL = audioURL
+        let item = AVPlayerItem(url: audioURL)
+        let player = AVPlayer(playerItem: item)
         player.volume = 1.0
-        audioPlayer = player
+        self.player = player
 
-        guard player.play() else {
-            audioPlayer = nil
-            throw NSError(domain: "RecognitionAnnouncementPlayer", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Announcement playback failed to start"
-            ])
-        }
+        print("[RecognitionAnnouncement] Starting AVPlayer announcement url=\(audioURL.lastPathComponent)")
+
+        player.play()
 
         do {
-            while player.isPlaying {
+            while !Task.isCancelled {
+                if let error = item.error {
+                    throw error
+                }
+                if item.status == .failed {
+                    throw item.error ?? NSError(domain: "RecognitionAnnouncementPlayer", code: 2, userInfo: [
+                        NSLocalizedDescriptionKey: "Announcement playback failed to start"
+                    ])
+                }
+                if item.status == .readyToPlay,
+                   player.timeControlStatus != .waitingToPlayAtSpecifiedRate,
+                   player.currentItem == nil || item.currentTime() >= item.duration {
+                    break
+                }
                 try Task.checkCancellation()
                 try await Task.sleep(for: .milliseconds(100))
             }
@@ -75,8 +82,12 @@ final class RecognitionAnnouncementPlayer {
     }
 
     private func stopPlayback() {
-        audioPlayer?.stop()
-        audioPlayer = nil
+        player?.pause()
+        player = nil
+        if let tempAudioURL {
+            try? FileManager.default.removeItem(at: tempAudioURL)
+            self.tempAudioURL = nil
+        }
     }
 
     private func restoreAudioSessionIfNeeded() {
@@ -85,6 +96,21 @@ final class RecognitionAnnouncementPlayer {
         self.sessionSnapshot = nil
         MediaPlaybackAudioSession.restore(snapshot)
         logAudioSession("after-session-restore", session: session)
+    }
+
+    private func writeTempAudioFile(data: Data, mimeType: String) throws -> URL {
+        let ext = if mimeType.lowercased().contains("mpeg") || mimeType.lowercased().contains("mp3") {
+            "mp3"
+        } else if mimeType.lowercased().contains("wav") {
+            "wav"
+        } else {
+            "bin"
+        }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("emory-announcements", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+        try data.write(to: url, options: [.atomic])
+        return url
     }
 
     private func logAudioSession(_ label: String, session: AVAudioSession) {

@@ -48,20 +48,20 @@ export class RecognitionAnnouncementService {
       this.ttsService.getVoiceId(),
     )
 
-    const cachePath = path.join(this.cacheDir, `${fingerprint}.wav`)
-    const cachedBytes = await this.readCache(cachePath)
-    if (cachedBytes) {
+    const cached = await this.readCache(fingerprint)
+    if (cached) {
       console.log('[recognition-announcement] cache hit', {
         personId,
         fingerprint,
-        bytes: cachedBytes.byteLength,
-        cachePath,
+        mimeType: cached.mimeType,
+        bytes: cached.audioBytes.byteLength,
+        cachePath: cached.path,
       })
       return {
         ...context,
         fingerprint,
-        mimeType: 'audio/wav',
-        audioBytes: cachedBytes,
+        mimeType: cached.mimeType,
+        audioBytes: cached.audioBytes,
       }
     }
 
@@ -92,13 +92,32 @@ export class RecognitionAnnouncementService {
     }
   }
 
-  private async readCache(cachePath: string): Promise<Uint8Array | null> {
-    try {
-      await access(cachePath)
-      const data = await readFile(cachePath)
-      return new Uint8Array(data)
-    } catch {
-      return null
+  private async readCache(fingerprint: string): Promise<{ path: string; mimeType: string; audioBytes: Uint8Array } | null> {
+    const candidates = [
+      {
+        path: path.join(this.cacheDir, `${fingerprint}.mp3`),
+        mimeType: 'audio/mpeg',
+      },
+      {
+        path: path.join(this.cacheDir, `${fingerprint}.wav`),
+        mimeType: 'audio/wav',
+      },
+    ]
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate.path)
+        const data = await readFile(candidate.path)
+        return {
+          path: candidate.path,
+          mimeType: candidate.mimeType,
+          audioBytes: new Uint8Array(data),
+        }
+      } catch {
+        continue
+      }
     }
+
+    return null
   }
 }

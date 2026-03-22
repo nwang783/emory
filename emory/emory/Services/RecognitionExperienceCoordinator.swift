@@ -56,8 +56,11 @@ final class RecognitionExperienceCoordinator {
         announcementTask = Task { [weak self] in
             guard let self = self else { return }
 
+            let shouldResumeStream = await StreamViewModel.shared.suspendSessionForAnnouncement()
+
             do {
                 try await self.announcementPlayer.playAnnouncement(for: person.id)
+                await StreamViewModel.shared.resumeSessionAfterAnnouncement(ifNeeded: shouldResumeStream)
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
@@ -67,12 +70,14 @@ final class RecognitionExperienceCoordinator {
                     print("[RecognitionExperience] Announcement finished for \(person.name); recording remains disabled while announcements are enabled")
                 }
             } catch is CancellationError {
+                await StreamViewModel.shared.resumeSessionAfterAnnouncement(ifNeeded: shouldResumeStream)
                 await MainActor.run {
                     self.onAnnouncementStateChange?(person.id, false)
                     self.announcementTask = nil
                 }
             } catch {
                 print("[RecognitionExperience] Announcement failed for \(person.name): \(error.localizedDescription)")
+                await StreamViewModel.shared.resumeSessionAfterAnnouncement(ifNeeded: shouldResumeStream)
                 await MainActor.run {
                     self.onAnnouncementStateChange?(person.id, false)
                     self.announcementTask = nil

@@ -126,9 +126,9 @@ export class CartesiaTtsService {
         },
         language: 'en',
         output_format: {
-          container: 'wav',
-          encoding: 'pcm_s16le',
+          container: 'mp3',
           sample_rate: 44100,
+          bit_rate: 128000,
         },
       }),
     })
