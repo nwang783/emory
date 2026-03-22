@@ -11,6 +11,7 @@ export function getConversationsRootDir(): string {
 
 export function extensionFromMimeType(mimeType: string): string {
   const m = mimeType.toLowerCase()
+  if (m.includes('wav')) return 'wav'
   if (m.includes('webm')) return 'webm'
   if (m.includes('ogg')) return 'ogg'
   if (m.includes('mp4') || m.includes('m4a')) return 'm4a'
