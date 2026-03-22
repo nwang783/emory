@@ -243,7 +243,8 @@ struct StreamDashboardView: View {
                     .foregroundStyle(EmoryTheme.textPrimary)
             }
         }
-        .onDisappear { viewModel.cleanup() }
+        // Don't cleanup on tab switch — let streaming continue in background.
+        // Cleanup happens in stopSession() when user explicitly stops.
     }
 
     // MARK: - Helpers

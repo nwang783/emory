@@ -339,7 +339,6 @@ final class StreamViewModel {
         log("Bridge disconnected")
     }
 
-    /// `ws://host:port/ingest?role=publisher` from Settings **http(s)://** base URL (same host + port as Test Connection), e.g. `http://10.0.0.237:18763` → `ws://10.0.0.237:18763/ingest?role=publisher`.
     private static func webSocketIngestURL(fromBackendHTTP raw: String) -> String? {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
@@ -360,8 +359,6 @@ final class StreamViewModel {
 
         let wsURL: String?
         if raw.hasPrefix("ws://") || raw.hasPrefix("wss://") {
-            // Ensure ws:// URLs include the /ingest?role=publisher path.
-            // Old bridge-server used bare ws://host:port; desktop remote-ingest requires /ingest.
             var url = raw
             while url.hasSuffix("/") { url.removeLast() }
             if !url.contains("/ingest") {
