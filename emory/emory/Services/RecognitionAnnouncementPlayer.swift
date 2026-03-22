@@ -18,8 +18,14 @@ final class RecognitionAnnouncementPlayer {
     private init() {}
 
     func playAnnouncement(for personId: String) async throws {
+        print("[RecognitionAnnouncement] Requesting announcement for personId=\(personId)")
         let client = try DesktopApiClient.fromSettings()
         let response = try await client.fetchRecognitionAnnouncement(personId: personId)
+        print(
+            "[RecognitionAnnouncement] Received announcement audio " +
+            "personId=\(personId) bytes=\(response.audioData.count) mime=\(response.mimeType) " +
+            "fingerprint=\(response.fingerprint ?? "none")"
+        )
         try await playAudio(data: response.audioData)
     }
 
@@ -38,6 +44,7 @@ final class RecognitionAnnouncementPlayer {
         stopPlayback()
 
         let session = AVAudioSession.sharedInstance()
+        logAudioSession("before-playback-config", session: session)
         sessionSnapshot = SessionSnapshot(
             category: session.category,
             mode: session.mode,
@@ -46,6 +53,7 @@ final class RecognitionAnnouncementPlayer {
         )
         try session.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetoothA2DP])
         try session.setActive(true)
+        logAudioSession("after-playback-config", session: session)
 
         let player = try AVAudioPlayer(data: data)
         player.prepareToPlay()
@@ -93,11 +101,38 @@ final class RecognitionAnnouncementPlayer {
             if sessionSnapshot.shouldReactivate {
                 try session.setActive(true)
                 MicrophoneCaptureService.shared.refreshCaptureAfterSessionChange()
+                logAudioSession("after-session-restore-reactivated", session: session)
             } else {
                 try session.setActive(false, options: .notifyOthersOnDeactivation)
+                logAudioSession("after-session-restore-deactivated", session: session)
             }
         } catch {
             print("[RecognitionAnnouncement] Failed to restore audio session: \(error.localizedDescription)")
         }
+    }
+
+    private func logAudioSession(_ label: String, session: AVAudioSession) {
+        let inputs = session.currentRoute.inputs
+            .map { "\($0.portType.rawValue):\($0.portName)" }
+            .joined(separator: ", ")
+        let outputs = session.currentRoute.outputs
+            .map { "\($0.portType.rawValue):\($0.portName)" }
+            .joined(separator: ", ")
+        let availableInputs = (session.availableInputs ?? [])
+            .map { "\($0.portType.rawValue):\($0.portName)" }
+            .joined(separator: ", ")
+        let preferredInput = session.preferredInput.map { "\($0.portType.rawValue):\($0.portName)" } ?? "none"
+        let hasMetaOutput = session.currentRoute.outputs.contains { port in
+            let name = port.portName.lowercased()
+            return name.contains("ray-ban") || name.contains("meta")
+        }
+
+        print(
+            "[RecognitionAnnouncement] Session \(label) " +
+            "category=\(session.category.rawValue) mode=\(session.mode.rawValue) " +
+            "preferredInput=\(preferredInput) metaRoute=\(AudioRouteDetector.isMetaAudioRouteActive()) " +
+            "metaOutput=\(hasMetaOutput) inputs=[\(inputs)] outputs=[\(outputs)] " +
+            "availableInputs=[\(availableInputs)]"
+        )
     }
 }

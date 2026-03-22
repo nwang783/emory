@@ -51,6 +51,12 @@ export class RecognitionAnnouncementService {
     const cachePath = path.join(this.cacheDir, `${fingerprint}.wav`)
     const cachedBytes = await this.readCache(cachePath)
     if (cachedBytes) {
+      console.log('[recognition-announcement] cache hit', {
+        personId,
+        fingerprint,
+        bytes: cachedBytes.byteLength,
+        cachePath,
+      })
       return {
         ...context,
         fingerprint,
@@ -59,11 +65,24 @@ export class RecognitionAnnouncementService {
       }
     }
 
+    console.log('[recognition-announcement] cache miss', {
+      personId,
+      fingerprint,
+      textLength: context.announcementText.length,
+      textPreview: context.announcementText.slice(0, 120),
+    })
     const result = await this.ttsService.synthesize({ text: context.announcementText })
     const targetPath = path.join(this.cacheDir, `${fingerprint}.${extensionFromMimeType(result.mimeType)}`)
 
     await mkdir(this.cacheDir, { recursive: true })
     await writeFile(targetPath, Buffer.from(result.audioBytes)).catch(() => {})
+    console.log('[recognition-announcement] synthesized', {
+      personId,
+      fingerprint,
+      mimeType: result.mimeType,
+      bytes: result.audioBytes.byteLength,
+      targetPath,
+    })
 
     return {
       ...context,

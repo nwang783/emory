@@ -31,7 +31,8 @@ final class RecognitionExperienceCoordinator {
         self.currentFocusedPersonId = person.id
         activeAnnouncementPersonId = person.id
 
-        guard shouldPlayAnnouncement(for: person.id) else {
+        if let skipReason = announcementSkipReason(for: person.id) {
+            print("[RecognitionExperience] Skipping announcement for \(person.name): \(skipReason)")
             conversationCaptureCoordinator.beginConversationCapture(for: person)
             return
         }
@@ -81,20 +82,20 @@ final class RecognitionExperienceCoordinator {
         }
     }
 
-    private func shouldPlayAnnouncement(for personId: String) -> Bool {
+    private func announcementSkipReason(for personId: String) -> String? {
         let settings = AppSettings.shared
-        guard settings.recognitionAnnouncementsEnabled else { return false }
+        guard settings.recognitionAnnouncementsEnabled else { return "disabled_in_settings" }
 
         if settings.recognitionAnnouncementsRequireMetaRoute && !AudioRouteDetector.isMetaAudioRouteActive() {
-            return false
+            return "meta_route_required_but_unavailable"
         }
 
         if let lastPlayedAt = lastAnnouncementAtByPersonId[personId],
            Date().timeIntervalSince(lastPlayedAt) < announcementCooldown {
-            return false
+            return "cooldown_active"
         }
 
-        return true
+        return nil
     }
 
     private func cancelAnnouncementPlayback() {

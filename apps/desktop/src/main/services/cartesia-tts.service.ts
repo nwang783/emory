@@ -102,6 +102,14 @@ export class CartesiaTtsService {
       throw new Error('Missing CARTESIA_VOICE_ID')
     }
 
+    console.log('[cartesia-tts] synthesize start', {
+      textLength: text.length,
+      textPreview: text.slice(0, 120),
+      modelId: this.modelId,
+      voiceId: this.voiceId,
+      baseUrl: this.baseUrl,
+    })
+
     const response = await fetch(`${this.baseUrl}/tts/bytes`, {
       method: 'POST',
       headers: {
@@ -125,6 +133,12 @@ export class CartesiaTtsService {
       }),
     })
 
+    console.log('[cartesia-tts] synthesize response', {
+      status: response.status,
+      ok: response.ok,
+      mimeType: response.headers.get('content-type') ?? 'unknown',
+    })
+
     if (!response.ok) {
       let details = response.statusText
       try {
@@ -146,6 +160,11 @@ export class CartesiaTtsService {
       audioBytes: new Uint8Array(arrayBuffer),
       mimeType: response.headers.get('content-type') ?? 'audio/wav',
     }
+
+    console.log('[cartesia-tts] synthesize complete', {
+      bytes: result.audioBytes.byteLength,
+      mimeType: result.mimeType,
+    })
 
     if (this.saveDebugAudio) {
       await saveDebugAudio({

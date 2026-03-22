@@ -71,10 +71,16 @@ struct DesktopApiClient {
 
     func fetchRecognitionAnnouncement(personId: String) async throws -> RecognitionAnnouncementAudio {
         let url = baseURL.appending(path: "api/v1/people/\(personId)/recognition-announcement")
+        print("[DesktopApiClient] Fetching recognition announcement personId=\(personId) url=\(url.absoluteString)")
         let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse else {
             throw DesktopApiError.invalidResponse
         }
+        print(
+            "[DesktopApiClient] Recognition announcement response " +
+            "status=\(http.statusCode) bytes=\(data.count) mime=\(http.value(forHTTPHeaderField: "Content-Type") ?? "unknown") " +
+            "fingerprint=\(http.value(forHTTPHeaderField: "X-Emory-Announcement-Fingerprint") ?? "none")"
+        )
         guard (200..<300).contains(http.statusCode) else {
             throw DesktopApiError.requestFailed(http.statusCode)
         }

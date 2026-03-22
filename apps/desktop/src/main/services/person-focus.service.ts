@@ -34,6 +34,8 @@ type PersonFocusOptions = {
   clearAfterSeconds?: number
 }
 
+const DEFAULT_CLEAR_AFTER_SECONDS = 4
+
 type CandidateFocus = {
   personId: string
   frames: number
@@ -72,7 +74,7 @@ export class PersonFocusService {
   ) {
     this.emit = emit
     this.framesToConfirm = Math.max(1, Math.floor(options.framesToConfirm ?? 2))
-    this.clearAfterSeconds = Math.max(0, options.clearAfterSeconds ?? 2)
+    this.clearAfterSeconds = Math.max(0, options.clearAfterSeconds ?? DEFAULT_CLEAR_AFTER_SECONDS)
   }
 
   observe(result: PersonFocusObservation): void {
