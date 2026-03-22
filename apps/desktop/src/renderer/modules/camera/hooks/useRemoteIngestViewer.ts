@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MSG_VIDEO_FRAME, parseBinaryMessage } from '@emory/ingest-protocol'
+import { MSG_VIDEO_FRAME, MSG_AUDIO_CHUNK, parseBinaryMessage } from '@emory/ingest-protocol'
 import { logRemoteIngest, logRemoteIngestTerminal } from '@/modules/camera/lib/remote-ingest-debug'
 
 export type RemoteIngestViewerPhase =
@@ -38,6 +38,8 @@ export type UseRemoteIngestViewerResult = {
   captureFrame: () => ArrayBuffer | null
   frameWidth: number
   frameHeight: number
+  isMuted: boolean
+  toggleMute: () => void
 }
 
 function readyStateLabel(readyState: number | undefined): string | null {
@@ -79,10 +81,17 @@ export function useRemoteIngestViewer({
   const canvasWidthRef = useRef(0)
   const canvasHeightRef = useRef(0)
 
+  // Audio playback via Web Audio API
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const nextPlayTimeRef = useRef(0)
+  const mutedRef = useRef(false)
+  const gainNodeRef = useRef<GainNode | null>(null)
+
   const [phase, setPhase] = useState<RemoteIngestViewerPhase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [frameWidth, setFrameWidth] = useState(640)
   const [frameHeight, setFrameHeight] = useState(480)
+  const [isMuted, setIsMuted] = useState(false)
 
   useEffect(() => {
     phaseRef.current = phase
@@ -109,11 +118,87 @@ export function useRemoteIngestViewer({
     }
   }, [])
 
+  const closeAudio = useCallback((): void => {
+    if (audioCtxRef.current) {
+      try {
+        void audioCtxRef.current.close()
+      } catch {
+        // ignore
+      }
+      audioCtxRef.current = null
+      gainNodeRef.current = null
+    }
+    nextPlayTimeRef.current = 0
+  }, [])
+
+  const ensureAudioCtx = useCallback((): AudioContext => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      const ctx = new AudioContext()
+      const gain = ctx.createGain()
+      gain.gain.value = mutedRef.current ? 0 : 1
+      gain.connect(ctx.destination)
+      audioCtxRef.current = ctx
+      gainNodeRef.current = gain
+      nextPlayTimeRef.current = 0
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      void audioCtxRef.current.resume()
+    }
+    return audioCtxRef.current
+  }, [])
+
+  const playAudioChunk = useCallback(
+    (payload: Uint8Array, sampleRate: number, channels: number): void => {
+      const ctx = ensureAudioCtx()
+      const gain = gainNodeRef.current
+      if (!gain) return
+
+      const sampleCount = Math.floor(payload.byteLength / 2)
+      const frameCount = channels > 0 ? Math.floor(sampleCount / channels) : sampleCount
+      if (frameCount === 0) return
+
+      const buffer = ctx.createBuffer(channels, frameCount, sampleRate)
+      const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+
+      for (let ch = 0; ch < channels; ch++) {
+        const channelData = buffer.getChannelData(ch)
+        for (let i = 0; i < frameCount; i++) {
+          const idx = (i * channels + ch) * 2
+          if (idx + 1 < payload.byteLength) {
+            channelData[i] = view.getInt16(idx, true) / 32768
+          }
+        }
+      }
+
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.connect(gain)
+
+      const now = ctx.currentTime
+      if (nextPlayTimeRef.current < now) {
+        nextPlayTimeRef.current = now + 0.01
+      }
+      source.start(nextPlayTimeRef.current)
+      nextPlayTimeRef.current += buffer.duration
+    },
+    [ensureAudioCtx],
+  )
+
+  const toggleMute = useCallback((): void => {
+    const next = !mutedRef.current
+    mutedRef.current = next
+    setIsMuted(next)
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = next ? 0 : 1
+    }
+  }, [])
+
   const stop = useCallback((): void => {
     decodeTokenRef.current += 1
     connectStartedAtRef.current = null
     wsOpenedAtRef.current = null
     closeSocket()
+    closeAudio()
     setPhase('idle')
     setError(null)
     const c = previewCanvasRef.current
@@ -130,7 +215,7 @@ export function useRemoteIngestViewer({
     decodingRef.current = false
     pendingPayloadRef.current = null
     logRemoteIngest('jpeg_ws_stop', {})
-  }, [closeSocket])
+  }, [closeSocket, closeAudio])
 
   useEffect(() => {
     if (!armed) {
@@ -252,7 +337,17 @@ export function useRemoteIngestViewer({
       if (!ab) return
       const u8 = new Uint8Array(ab)
       const parsed = parseBinaryMessage(u8)
-      if (!parsed || parsed.messageType !== MSG_VIDEO_FRAME) {
+      if (!parsed) return
+
+      if (parsed.messageType === MSG_AUDIO_CHUNK) {
+        const meta = parsed.metadata as { sr?: number; ch?: number }
+        const sr = typeof meta.sr === 'number' ? meta.sr : 16000
+        const ch = typeof meta.ch === 'number' ? meta.ch : 1
+        playAudioChunk(parsed.payload, sr, ch)
+        return
+      }
+
+      if (parsed.messageType !== MSG_VIDEO_FRAME) {
         nonVideoBinaryRef.current += 1
         return
       }
@@ -324,7 +419,7 @@ export function useRemoteIngestViewer({
 
       decodeAndDraw(payload)
     }
-  }, [armed, host, port, stop])
+  }, [armed, host, port, stop, playAudioChunk])
 
   useEffect(() => {
     startRef.current = start
@@ -475,5 +570,7 @@ export function useRemoteIngestViewer({
     captureFrame,
     frameWidth,
     frameHeight,
+    isMuted,
+    toggleMute,
   }
 }

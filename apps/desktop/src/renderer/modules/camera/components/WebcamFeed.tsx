@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Camera, CameraOff, GraduationCap, MessageSquareText, MonitorSmartphone } from 'lucide-react'
+import { Camera, CameraOff, GraduationCap, MessageSquareText, MonitorSmartphone, Volume2, VolumeOff } from 'lucide-react'
 import { useCameraFeed } from '../hooks/useCameraFeed'
 import { useFaceStore } from '@/shared/stores/face.store'
 import { useSettingsStore } from '@/shared/stores/settings.store'
@@ -120,6 +120,8 @@ export function WebcamFeed(): React.JSX.Element {
     captureFrame,
     frameWidth,
     frameHeight,
+    isMuted,
+    toggleMute,
     videoRef,
     canvasRef,
     previewCanvasRef,
@@ -658,6 +660,17 @@ export function WebcamFeed(): React.JSX.Element {
               <CameraOff />
               Stop
             </Button>
+            {mode === 'remote' && (
+              <Button
+                variant={isMuted ? 'secondary' : 'outline'}
+                size="lg"
+                onClick={toggleMute}
+                aria-label={isMuted ? 'Unmute remote audio' : 'Mute remote audio'}
+              >
+                {isMuted ? <VolumeOff /> : <Volume2 />}
+                {isMuted ? 'Unmute' : 'Mute'}
+              </Button>
+            )}
             <WhoIsThisButton identifiedPeople={identifiedPeople} />
           </>
         )}
