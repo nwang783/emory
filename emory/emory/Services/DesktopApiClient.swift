@@ -134,6 +134,37 @@ struct DesktopApiClient {
         return url
     }
 
+    // MARK: - Face Enrollment
+
+    struct EnrollmentResponse: Decodable {
+        let success: Bool
+        let embeddingId: String?
+        let facesDetected: Int?
+        let error: String?
+    }
+
+    func enrollFace(personId: String, jpegData: Data) async throws -> EnrollmentResponse {
+        let url = baseURL.appending(path: "api/v1/people/\(personId)/enroll")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jpegData
+        request.timeoutInterval = 30
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw DesktopApiError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            // Try to extract error message from response
+            if let errorResponse = try? decoder.decode(EnrollmentResponse.self, from: data) {
+                return errorResponse
+            }
+            throw DesktopApiError.requestFailed(http.statusCode)
+        }
+        return try decoder.decode(EnrollmentResponse.self, from: data)
+    }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let url = baseURL.appending(path: path)
         let (data, response) = try await session.data(from: url)
