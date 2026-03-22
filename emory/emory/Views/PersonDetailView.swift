@@ -473,15 +473,18 @@ struct PersonDetailView: View {
             let client = try DesktopApiClient.fromSettings()
 
             // Grab the current frame from the streaming view model
-            // If streaming, use the live frame; otherwise prompt user
             guard let currentFrame = await getEnrollmentFrame() else {
                 enrollmentResult = "No video frame available. Start streaming from the Glasses tab first, then come back and try again."
                 isEnrolling = false
                 return
             }
 
-            // Convert to JPEG
-            guard let jpegData = currentFrame.jpegData(compressionQuality: 0.8) else {
+            // Convert to JPEG on a background thread to avoid blocking the stream
+            let jpegData: Data? = await Task.detached(priority: .userInitiated) {
+                currentFrame.jpegData(compressionQuality: 0.7)
+            }.value
+
+            guard let jpegData else {
                 enrollmentResult = "Failed to encode image. Please try again."
                 isEnrolling = false
                 return

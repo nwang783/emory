@@ -745,6 +745,100 @@ export class RemoteIngestServerService {
         return
       }
 
+      // POST /api/v1/people — create a new person, optionally with face enrollment
+      if (req.method === 'POST' && pathname === '/api/v1/people') {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => chunks.push(chunk))
+        req.on('end', async () => {
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            const { name, relationship, notes, image } = body as {
+              name?: string
+              relationship?: string
+              notes?: string
+              image?: string // base64 JPEG for face enrollment
+            }
+
+            if (!name || !name.trim()) {
+              this.sendJson(res, 400, { success: false, error: 'Name is required' })
+              return
+            }
+
+            const peopleRepo = this.bridgeLive?.peopleRepo
+            if (!peopleRepo) {
+              this.sendJson(res, 503, { success: false, error: 'Database not available' })
+              return
+            }
+
+            // Create the person
+            const person = peopleRepo.create({
+              name: name.trim(),
+              relationship: relationship?.trim(),
+              notes: notes?.trim(),
+            })
+            console.log(`[API] Created person: ${person.name} (${person.id})`)
+
+            // If image provided, enroll their face
+            let enrollResult: { success: boolean; embeddingId?: string; error?: string } = { success: false }
+            if (image) {
+              const faceService = this.bridgeLive?.getFaceService()
+              if (faceService) {
+                try {
+                  const sharp = (await import('sharp')).default
+                  const jpegData = Buffer.from(image, 'base64')
+                  const { data: rawPixels, info } = await sharp(jpegData)
+                    .ensureAlpha()
+                    .raw()
+                    .toBuffer({ resolveWithObject: true })
+
+                  const detections = await faceService.detectFaces(rawPixels, info.width, info.height)
+                  if (detections.length > 0) {
+                    const primaryFace = detections[0]
+                    const embedding = await faceService.extractEmbedding(rawPixels, info.width, info.height, primaryFace)
+
+                    // Generate thumbnail
+                    let thumbnailBase64: string | undefined
+                    try {
+                      const cropX = Math.max(0, Math.round(primaryFace.bbox.x))
+                      const cropY = Math.max(0, Math.round(primaryFace.bbox.y))
+                      const cropW = Math.max(1, Math.min(Math.round(primaryFace.bbox.width), info.width - cropX))
+                      const cropH = Math.max(1, Math.min(Math.round(primaryFace.bbox.height), info.height - cropY))
+                      const thumbBuffer = await sharp(rawPixels, { raw: { width: info.width, height: info.height, channels: 4 } })
+                        .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
+                        .resize(128, 128, { fit: 'cover' })
+                        .jpeg({ quality: 80 })
+                        .toBuffer()
+                      thumbnailBase64 = thumbBuffer.toString('base64')
+                    } catch { /* proceed without thumbnail */ }
+
+                    const saved = peopleRepo.addEmbedding(person.id, embedding, 'live_capture', thumbnailBase64)
+                    enrollResult = { success: true, embeddingId: saved.id }
+                    console.log(`[API] Enrolled face for ${person.name}, embeddingId=${saved.id}`)
+                  } else {
+                    enrollResult = { success: false, error: 'No face detected in the image' }
+                  }
+                } catch (err) {
+                  enrollResult = { success: false, error: err instanceof Error ? err.message : String(err) }
+                }
+              } else {
+                enrollResult = { success: false, error: 'Face service not initialized' }
+              }
+            }
+
+            this.sendJson(res, 201, {
+              success: true,
+              person: { id: person.id, name: person.name, relationship: person.relationship },
+              enrollment: image ? enrollResult : undefined,
+            })
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error(`[API] Create person error:`, message)
+            this.sendJson(res, 500, { success: false, error: message })
+          }
+        })
+        return
+      }
+
       // POST /api/v1/people/{id}/enroll — receive JPEG from iOS, run face detection + embedding, store in DB
       const enrollMatch = pathname.match(/^\/api\/v1\/people\/([^/]+)\/enroll$/)
       if (req.method === 'POST' && enrollMatch) {

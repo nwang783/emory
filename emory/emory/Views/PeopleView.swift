@@ -13,6 +13,8 @@ struct PeopleView: View {
     @State private var showRemoveConfirmation = false
     @State private var newPersonName = ""
     @State private var newPersonRelationship = ""
+    @State private var enrollmentStatus: String?
+    @State private var showEnrollmentAlert = false
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -89,21 +91,20 @@ struct PeopleView: View {
             }
             .background(EmoryTheme.background.ignoresSafeArea())
 
-            if settings.isMockMode {
-                Button {
-                    showAddPerson = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
-                        .background(EmoryTheme.primary)
-                        .clipShape(Circle())
-                        .shadow(color: EmoryTheme.primary.opacity(0.3), radius: 8, y: 4)
-                }
-                .padding(.trailing, 24)
-                .padding(.bottom, 24)
+            // Floating add button — always visible
+            Button {
+                showAddPerson = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.title2.bold())
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(EmoryTheme.primary)
+                    .clipShape(Circle())
+                    .shadow(color: EmoryTheme.primary.opacity(0.3), radius: 8, y: 4)
             }
+            .padding(.trailing, 24)
+            .padding(.bottom, 24)
         }
         .navigationTitle("People")
         .navigationBarTitleDisplayMode(.inline)
@@ -129,13 +130,21 @@ struct PeopleView: View {
                 relationship: $newPersonRelationship,
                 fontSize: settings.fontSize
             ) {
-                let person = Person(name: newPersonName, relationship: newPersonRelationship)
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    people.append(person)
+                if settings.isMockMode {
+                    // Mock mode — add locally
+                    let person = Person(name: newPersonName, relationship: newPersonRelationship)
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        people.append(person)
+                    }
+                    newPersonName = ""
+                    newPersonRelationship = ""
+                    showAddPerson = false
+                } else {
+                    // Real mode — create on desktop + enroll face from live stream
+                    Task {
+                        await createAndEnrollPerson()
+                    }
                 }
-                newPersonName = ""
-                newPersonRelationship = ""
-                showAddPerson = false
             }
         }
         .task(id: "\(settings.isMockMode)-\(settings.backendURL)") {
@@ -147,6 +156,60 @@ struct PeopleView: View {
                 people = newValue
             }
         }
+        .alert("Add Person", isPresented: $showEnrollmentAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(enrollmentStatus ?? "")
+        }
+    }
+
+    private func createAndEnrollPerson() async {
+        let name = newPersonName.trimmingCharacters(in: .whitespaces)
+        let relationship = newPersonRelationship.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+
+        // Capture current frame and compress on background thread to avoid blocking stream
+        let currentFrame = StreamViewModel.currentEnrollmentFrame
+        let frameJpeg: Data? = await Task.detached(priority: .userInitiated) {
+            currentFrame?.jpegData(compressionQuality: 0.7)
+        }.value
+
+        do {
+            let client = try DesktopApiClient.fromSettings()
+            let response = try await client.createPerson(
+                name: name,
+                relationship: relationship.isEmpty ? nil : relationship,
+                jpegData: frameJpeg
+            )
+
+            if response.success, let created = response.person {
+                var message = "\(created.name) has been added to your circle!"
+                if let enrollment = response.enrollment {
+                    if enrollment.success {
+                        message += " Their face has been enrolled for recognition."
+                    } else {
+                        message += " Face enrollment: \(enrollment.error ?? "no face detected"). You can try again from their profile."
+                    }
+                } else if frameJpeg == nil {
+                    message += " Start streaming from the Glasses tab to enroll their face."
+                }
+                enrollmentStatus = message
+                print("[AddPerson] Created \(created.name) (id=\(created.id))")
+
+                // Refresh people list
+                await peopleStore.loadPeople()
+                people = peopleStore.people
+            } else {
+                enrollmentStatus = response.error ?? "Failed to create person."
+            }
+        } catch {
+            enrollmentStatus = "Could not connect to desktop: \(error.localizedDescription)"
+        }
+
+        newPersonName = ""
+        newPersonRelationship = ""
+        showAddPerson = false
+        showEnrollmentAlert = true
     }
 }
 

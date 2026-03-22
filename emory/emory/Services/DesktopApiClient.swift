@@ -134,13 +134,63 @@ struct DesktopApiClient {
         return url
     }
 
-    // MARK: - Face Enrollment
+    // MARK: - Create Person + Face Enrollment
+
+    struct CreatePersonResponse: Decodable {
+        let success: Bool
+        let person: CreatedPerson?
+        let enrollment: EnrollmentResult?
+        let error: String?
+
+        struct CreatedPerson: Decodable {
+            let id: String
+            let name: String
+            let relationship: String?
+        }
+
+        struct EnrollmentResult: Decodable {
+            let success: Bool
+            let embeddingId: String?
+            let error: String?
+        }
+    }
 
     struct EnrollmentResponse: Decodable {
         let success: Bool
         let embeddingId: String?
         let facesDetected: Int?
         let error: String?
+    }
+
+    /// Creates a new person on the desktop and optionally enrolls their face from a JPEG image
+    func createPerson(name: String, relationship: String?, jpegData: Data?) async throws -> CreatePersonResponse {
+        let url = baseURL.appending(path: "api/v1/people")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+
+        var body: [String: Any] = ["name": name]
+        if let relationship, !relationship.isEmpty {
+            body["relationship"] = relationship
+        }
+        if let jpegData {
+            body["image"] = jpegData.base64EncodedString()
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw DesktopApiError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if let errorResponse = try? decoder.decode(CreatePersonResponse.self, from: data) {
+                return errorResponse
+            }
+            throw DesktopApiError.requestFailed(http.statusCode)
+        }
+        return try decoder.decode(CreatePersonResponse.self, from: data)
     }
 
     func enrollFace(personId: String, jpegData: Data) async throws -> EnrollmentResponse {
