@@ -40,6 +40,8 @@ export type UseCameraFeedResult = {
   /** True when remote audio playback is muted. Only relevant when mode === 'remote'. */
   isMuted: boolean
   toggleMute: () => void
+  /** MediaStream of phone audio for conversation recording in remote mode; null otherwise. */
+  remoteAudioStream: MediaStream | null
   videoRef: React.RefObject<HTMLVideoElement | null>
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   previewCanvasRef: React.RefObject<HTMLCanvasElement | null>
@@ -220,6 +222,7 @@ export function useCameraFeed(): UseCameraFeedResult {
     frameHeight,
     isMuted: ingestWsRemote.isMuted,
     toggleMute: ingestWsRemote.toggleMute,
+    remoteAudioStream: useRemote ? ingestWsRemote.remoteAudioStream : null,
     videoRef: local.videoRef,
     canvasRef: local.canvasRef,
     previewCanvasRef: ingestWsRemote.previewCanvasRef,

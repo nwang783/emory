@@ -68,7 +68,9 @@ export function useConversationRecorder(
   useEffect(() => {
     if (!isActive) {
       micBlockedRef.current = false
-      streamRef.current?.getTracks().forEach((t) => t.stop())
+      if (!remoteAudioStream) {
+        streamRef.current?.getTracks().forEach((t) => t.stop())
+      }
       streamRef.current = null
       setMicLabel(null)
       phaseRef.current = 'idle'
@@ -80,6 +82,16 @@ export function useConversationRecorder(
     setError(null)
     setMicLabel(null)
     micBlockedRef.current = false
+
+    if (remoteAudioStream && remoteAudioStream.getAudioTracks().length > 0) {
+      streamRef.current = remoteAudioStream
+      micBlockedRef.current = false
+      setMicLabel('Remote (phone / glasses)')
+      return () => {
+        cancelled = true
+        streamRef.current = null
+      }
+    }
 
     void navigator.mediaDevices
       .getUserMedia({
@@ -114,11 +126,13 @@ export function useConversationRecorder(
     return () => {
       cancelled = true
       window.setTimeout(() => {
-        streamRef.current?.getTracks().forEach((t) => t.stop())
+        if (!remoteAudioStream) {
+          streamRef.current?.getTracks().forEach((t) => t.stop())
+        }
         streamRef.current = null
       }, MIC_STREAM_RELEASE_DELAY_MS)
     }
-  }, [isActive])
+  }, [isActive, remoteAudioStream])
 
   useEffect(() => {
     if (!isActive) return

@@ -1,5 +1,12 @@
 # Documentation changelog
 
+## 2026-03-22 — Conversation recorder uses phone audio in remote mode
+
+- **Renderer** — [`useRemoteIngestViewer.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useRemoteIngestViewer.ts): adds a `MediaStreamAudioDestinationNode` alongside the speaker `GainNode`. Each decoded audio chunk connects to both destinations — the gain node (mutable speaker output) and the stream destination (always full volume). Exposes `remoteAudioStream: MediaStream | null` for downstream consumers.
+- **Renderer** — [`useConversationRecorder.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useConversationRecorder.ts): accepts optional `remoteAudioStream` parameter. When provided with active audio tracks, uses it directly instead of calling `getUserMedia()` for the local Windows microphone. Mic label changes to "Remote (phone / glasses)". Does not stop remote stream tracks on cleanup (they are owned by the audio context).
+- **Renderer** — [`useCameraFeed.ts`](../apps/desktop/src/renderer/modules/camera/hooks/useCameraFeed.ts): threads `remoteAudioStream` (from `ingestWsRemote`) through to consumers; null when in local mode.
+- **UI** — [`WebcamFeed.tsx`](../apps/desktop/src/renderer/modules/camera/components/WebcamFeed.tsx): passes `remoteAudioStream` to `useConversationRecorder`.
+
 ## 2026-03-22 — iOS: configurable audio source (iPhone mic vs Ray-Ban glasses)
 
 - **Model** — [`AppSettings.swift`](../emory/emory/Models/AppSettings.swift): new `audioSource` setting (`AudioSource` enum: `.iphone` / `.rayBans`), persisted via `UserDefaults`. Defaults to iPhone mic.

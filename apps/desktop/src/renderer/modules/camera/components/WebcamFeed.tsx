@@ -122,6 +122,7 @@ export function WebcamFeed(): React.JSX.Element {
     frameHeight,
     isMuted,
     toggleMute,
+    remoteAudioStream,
     videoRef,
     canvasRef,
     previewCanvasRef,
@@ -133,7 +134,7 @@ export function WebcamFeed(): React.JSX.Element {
   const rafIdRef = useRef<number | null>(null)
   const tracksRef = useRef<FaceTrack[]>([])
   const { phase: conversationPhase, error: conversationError, micLabel: conversationMicLabel } =
-    useConversationRecorder(feedReady, tracksRef)
+    useConversationRecorder(feedReady, tracksRef, remoteAudioStream)
   const detectInFlightRef = useRef(false)
   const identifyInFlightRef = useRef(false)
   const [autoLearnCount, setAutoLearnCount] = useState(0)
