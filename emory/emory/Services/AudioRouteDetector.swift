@@ -7,9 +7,6 @@ import AVFoundation
 
 @MainActor
 final class AudioRouteDetector {
-
-    private var observerToken: (any NSObjectProtocol)?
-
     /// Async stream that emits `true` when a Meta glasses Bluetooth
     /// audio route is detected, `false` otherwise.
     func audioAvailabilityStream() -> AsyncStream<Bool> {
@@ -19,7 +16,7 @@ final class AudioRouteDetector {
             continuation.yield(initialAvailable)
 
             // Observe route changes
-            self.observerToken = NotificationCenter.default.addObserver(
+            let observerToken = NotificationCenter.default.addObserver(
                 forName: AVAudioSession.routeChangeNotification,
                 object: nil,
                 queue: .main
@@ -28,18 +25,14 @@ final class AudioRouteDetector {
                 continuation.yield(available)
             }
 
-            continuation.onTermination = { [weak self] _ in
-                Task { @MainActor in
-                    if let token = self?.observerToken {
-                        NotificationCenter.default.removeObserver(token)
-                    }
-                }
+            continuation.onTermination = { _ in
+                NotificationCenter.default.removeObserver(observerToken)
             }
         }
     }
 
     /// Check if any current audio route input/output is from Meta glasses.
-    private static func isMetaAudioRouteActive() -> Bool {
+    nonisolated static func isMetaAudioRouteActive() -> Bool {
         let route = AVAudioSession.sharedInstance().currentRoute
         let allPorts = route.inputs + route.outputs
         return allPorts.contains { port in

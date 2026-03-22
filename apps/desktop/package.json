@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test:camera-codecs": "bun test src/renderer/modules/camera/lib/orderVideoCodecsForIngest.test.ts",
     "test:conversation-ingest": "bun test src/main/services/conversation-ingest.service.test.ts",
+    "test:recognition-context": "bun test src/main/services/recognition-context.service.test.ts",
     "test:person-focus": "bun test src/main/services/person-focus.service.test.ts",
     "manual:process-recording": "vite-node scripts/process-manual-recording.ts",
     "manual:query-memory": "vite-node scripts/query-manual-memory.ts",

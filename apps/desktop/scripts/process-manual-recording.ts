@@ -5,6 +5,7 @@ import { ConversationProcessingService } from '../src/main/services/conversation
 import { DeepgramService } from '../src/main/services/deepgram.service.js'
 import { loadEnvironment } from '../src/main/services/env.service.js'
 import { MemoryExtractionService } from '../src/main/services/memory-extraction.service.js'
+import { ProfileKeyFactsService } from '../src/main/services/profile-key-facts.service.js'
 import { seedManualDemoData } from './manual-demo-data.js'
 
 type CliOptions = {
@@ -84,12 +85,14 @@ async function main(): Promise<void> {
   const relationshipRepo = new RelationshipRepository(adapter)
   const deepgramService = new DeepgramService()
   const memoryExtractionService = new MemoryExtractionService()
+  const profileKeyFactsService = new ProfileKeyFactsService()
   const processingService = new ConversationProcessingService(
     conversationRepo,
     peopleRepo,
     relationshipRepo,
     deepgramService,
     memoryExtractionService,
+    profileKeyFactsService,
   )
 
   const { selfPerson, targetPerson } = seedManualDemoData(peopleRepo, {

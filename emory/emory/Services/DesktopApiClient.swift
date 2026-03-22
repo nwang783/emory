@@ -21,6 +21,12 @@ enum DesktopApiError: LocalizedError {
 }
 
 struct DesktopApiClient {
+    struct RecognitionAnnouncementAudio {
+        let audioData: Data
+        let mimeType: String
+        let fingerprint: String?
+    }
+
     let baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -57,6 +63,27 @@ struct DesktopApiClient {
 
     func fetchPersonDetail(personId: String) async throws -> DesktopPersonDetailResponse {
         try await get("api/v1/people/\(personId)")
+    }
+
+    func fetchRecognitionContext(personId: String) async throws -> DesktopRecognitionContextResponse {
+        try await get("api/v1/people/\(personId)/recognition-context")
+    }
+
+    func fetchRecognitionAnnouncement(personId: String) async throws -> RecognitionAnnouncementAudio {
+        let url = baseURL.appending(path: "api/v1/people/\(personId)/recognition-announcement")
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse else {
+            throw DesktopApiError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw DesktopApiError.requestFailed(http.statusCode)
+        }
+
+        return RecognitionAnnouncementAudio(
+            audioData: data,
+            mimeType: http.value(forHTTPHeaderField: "Content-Type") ?? "audio/wav",
+            fingerprint: http.value(forHTTPHeaderField: "X-Emory-Announcement-Fingerprint")
+        )
     }
 
     func fetchMemories(personId: String) async throws -> DesktopMemoriesResponse {

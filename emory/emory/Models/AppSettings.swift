@@ -30,6 +30,14 @@ final class AppSettings {
         didSet { defaults.set(audioSource.rawValue, forKey: Keys.audioSource) }
     }
 
+    var recognitionAnnouncementsEnabled: Bool {
+        didSet { defaults.set(recognitionAnnouncementsEnabled, forKey: Keys.recognitionAnnouncementsEnabled) }
+    }
+
+    var recognitionAnnouncementsRequireMetaRoute: Bool {
+        didSet { defaults.set(recognitionAnnouncementsRequireMetaRoute, forKey: Keys.recognitionAnnouncementsRequireMetaRoute) }
+    }
+
     private let defaults = UserDefaults.standard
 
     private enum Keys {
@@ -37,6 +45,8 @@ final class AppSettings {
         static let backendURL = "app_settings.backend_url"
         static let fontSize = "app_settings.font_size"
         static let audioSource = "app_settings.audio_source"
+        static let recognitionAnnouncementsEnabled = "app_settings.recognition_announcements_enabled"
+        static let recognitionAnnouncementsRequireMetaRoute = "app_settings.recognition_announcements_require_meta_route"
     }
 
     private init() {
@@ -45,5 +55,8 @@ final class AppSettings {
         self.backendURL = defaults.string(forKey: Keys.backendURL) ?? "http://127.0.0.1:18763"
         self.fontSize = EmoryTheme.FontSize(rawValue: defaults.string(forKey: Keys.fontSize) ?? "") ?? .medium
         self.audioSource = AudioSource(rawValue: defaults.string(forKey: Keys.audioSource) ?? "") ?? .iphone
+        self.recognitionAnnouncementsEnabled = defaults.object(forKey: Keys.recognitionAnnouncementsEnabled) as? Bool ?? true
+        self.recognitionAnnouncementsRequireMetaRoute =
+            defaults.object(forKey: Keys.recognitionAnnouncementsRequireMetaRoute) as? Bool ?? true
     }
 }

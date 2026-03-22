@@ -278,6 +278,20 @@ export class ConversationRepository {
     return rows.map(rowToPersonMemory)
   }
 
+  getAllMemoriesByPerson(personId: string): PersonMemory[] {
+    const db = this.adapter.getDb()
+    const rows = db
+      .prepare(`
+      SELECT *
+      FROM person_memories
+      WHERE person_id = ?
+      ORDER BY memory_date DESC, created_at DESC
+    `)
+      .all(personId) as PersonMemoryRow[]
+
+    return rows.map(rowToPersonMemory)
+  }
+
   /** All graph-synced / manual relationship lines for these people (not subject to recent-memory LIMIT cut-off). */
   getRelationshipMemoriesForPersonIds(personIds: string[]): PersonMemory[] {
     if (personIds.length === 0) return []

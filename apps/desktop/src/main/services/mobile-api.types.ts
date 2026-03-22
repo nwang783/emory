@@ -49,6 +49,8 @@ export type MobileApiPersonDetail = {
   person: MobileApiPerson
   recentMemories: MobileApiMemory[]
   recentEncounters: MobileApiEncounter[]
+  latestConversationSummary: string | null
+  latestConversationRecordedAt: string | null
 }
 
 export type MobileApiMemoriesResponse = {
