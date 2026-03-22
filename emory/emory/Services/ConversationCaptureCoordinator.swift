@@ -88,7 +88,8 @@ final class ConversationCaptureCoordinator {
 
         do {
             if !microphoneService.isCapturing {
-                try microphoneService.start(audioSource: AppSettings.shared.audioSource)
+                // Skip audio session config to avoid killing the glasses Bluetooth connection
+                try microphoneService.start(audioSource: AppSettings.shared.audioSource, skipSessionConfig: true)
                 ownsMicrophoneCapture = true
                 print("[ConversationCapture] Started microphone capture for automatic conversation recording")
             }
@@ -159,7 +160,8 @@ final class ConversationCaptureCoordinator {
 
     private func stopOwnedMicrophoneIfNeeded() {
         if ownsMicrophoneCapture {
-            microphoneService.stop()
+            // Don't deactivate audio session — glasses may still be streaming
+            microphoneService.stop(deactivateSession: false)
             ownsMicrophoneCapture = false
             print("[ConversationCapture] Stopped microphone capture owned by automatic conversation recording")
         }
