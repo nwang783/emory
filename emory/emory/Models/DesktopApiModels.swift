@@ -7,6 +7,7 @@ struct DesktopHealthResponse: Decodable {
     let instanceId: String
     let friendlyName: String
     let signalingPort: Int
+    let wsSignalingPath: String?
 }
 
 struct DesktopPeopleResponse: Decodable {
@@ -128,4 +129,38 @@ struct DesktopMemoryGroup: Decodable, Identifiable {
             memories: memories.map { $0.asPersonMemory() }
         )
     }
+}
+
+struct DesktopSignalingEnvelope: Decodable {
+    let type: String
+}
+
+struct DesktopSignalingPingRelay: Codable {
+    let type: String
+    let seq: Int
+}
+
+struct DesktopRecognizedPerson: Decodable, Equatable {
+    let id: String
+    let name: String
+    let relationship: String?
+    let similarity: Double
+    let faceThumbnail: String?
+
+    func asPersonSummary() -> Person {
+        Person(
+            id: id,
+            name: name,
+            relationship: relationship?.isEmpty == false ? relationship! : "Person you know",
+            faceThumbnail: faceThumbnail
+        )
+    }
+}
+
+struct DesktopPersonFocusEvent: Decodable, Equatable {
+    let type: String
+    let sequence: Int
+    let ts: Double
+    let reason: String
+    let person: DesktopRecognizedPerson?
 }

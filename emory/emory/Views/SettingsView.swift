@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @State private var settings = AppSettings.shared
     @State private var connectionStore = DesktopConnectionStore.shared
+    @State private var recognitionStore = DesktopRecognitionStore.shared
 
     var body: some View {
         ScrollView {
@@ -107,7 +108,28 @@ struct SettingsView: View {
                                 .foregroundStyle(connectionStore.isConnected ? EmoryTheme.secondary : EmoryTheme.textSecondary)
                         }
 
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(recognitionStore.isConnected ? EmoryTheme.secondary : Color.gray)
+                                .frame(width: 8, height: 8)
+                            Text("Auto Recognition: \(recognitionStore.statusText)")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                        }
+
+                        if let lastRecognizedName = recognitionStore.lastRecognizedName {
+                            Text("Last recognized person: \(lastRecognizedName)")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                        }
+
                         if let lastError = connectionStore.lastError {
+                            Text(lastError)
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.destructive)
+                        }
+
+                        if let lastError = recognitionStore.lastError {
                             Text(lastError)
                                 .font(.system(size: settings.fontSize.captionSize))
                                 .foregroundStyle(EmoryTheme.destructive)

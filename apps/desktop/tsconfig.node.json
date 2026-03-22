@@ -7,6 +7,7 @@
     "lib": ["ES2022"],
     "baseUrl": ".",
     "paths": {
+      "@emory/bridge-live": ["../../packages/bridge-live/src/index.ts"],
       "@emory/ingest-protocol": ["../../packages/ingest-protocol/src/index.ts"]
     }
   },

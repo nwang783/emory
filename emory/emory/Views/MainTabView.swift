@@ -6,7 +6,11 @@ import SwiftUI
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var hasOpenedGlassesTab = false
-
+    @State private var settings = AppSettings.shared
+    @State private var recognitionStore = DesktopRecognitionStore.shared
+    @State private var showFullProfile = false
+    @State private var profilePerson: Person?
+    
     var body: some View {
         TabView(selection: $selectedTab) {
             // Home tab
@@ -18,7 +22,7 @@ struct MainTabView: View {
                 Text("Home")
             }
             .tag(0)
-
+            
             // Glasses tab — only create StreamDashboardView once user visits this tab
             NavigationStack {
                 if hasOpenedGlassesTab {
@@ -32,7 +36,7 @@ struct MainTabView: View {
                 Text("Glasses")
             }
             .tag(1)
-
+            
             // Help tab
             NavigationStack {
                 HelpView()
@@ -42,7 +46,7 @@ struct MainTabView: View {
                 Text("Help")
             }
             .tag(2)
-
+            
             NavigationStack {
                 SettingsView()
             }
@@ -58,90 +62,122 @@ struct MainTabView: View {
                 hasOpenedGlassesTab = true
             }
         }
+        .task(id: "\(settings.isMockMode)-\(settings.backendURL)") {
+            recognitionStore.refreshConnection()
+        }
+        .overlay {
+            if let presentation = recognitionStore.presentedRecognition {
+                RecognitionPopupView(
+                    presentation: presentation,
+                    onViewProfile: {
+                        profilePerson = presentation.resolvedPerson
+                        recognitionStore.dismissPresentedRecognition()
+                        showFullProfile = true
+                    },
+                    onDismiss: {
+                        recognitionStore.dismissPresentedRecognition()
+                    }
+                )
+            }
+        }
+        .fullScreenCover(isPresented: $showFullProfile) {
+            if let person = profilePerson {
+                NavigationStack {
+                    PersonDetailView(person: person)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Done") {
+                                    showFullProfile = false
+                                }
+                            }
+                        }
+                }
+            }
+        }
     }
 }
 
 // MARK: - Help View
-
-struct HelpView: View {
-    @State private var settings = AppSettings.shared
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Icon
+    
+    struct HelpView: View {
+        @State private var settings = AppSettings.shared
+        
+        var body: some View {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Icon
+                    ZStack {
+                        Circle()
+                            .fill(EmoryTheme.primary.opacity(0.15))
+                            .frame(width: 80, height: 80)
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundStyle(EmoryTheme.primary)
+                    }
+                    .padding(.top, 20)
+                    
+                    Text("How can we help?")
+                        .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
+                        .foregroundStyle(EmoryTheme.textPrimary)
+                    
+                    VStack(spacing: 12) {
+                        helpCard(
+                            icon: "eye.fill",
+                            title: "Using Your Glasses",
+                            description: "Tap 'Glasses' at the bottom, then tap 'Start Stream' to begin."
+                        )
+                        
+                        helpCard(
+                            icon: "person.2.fill",
+                            title: "Adding People",
+                            description: "Go to Home, tap 'People', then tap the + button to add someone new."
+                        )
+                        
+                        helpCard(
+                            icon: "mic.fill",
+                            title: "Testing Audio",
+                            description: "Go to Glasses, tap 'Start Mic', then hold 'Hold to Record' to test."
+                        )
+                        
+                        helpCard(
+                            icon: "phone.fill",
+                            title: "Need More Help?",
+                            description: "Ask your caregiver or family member for assistance."
+                        )
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 40)
+            }
+            .background(EmoryTheme.background.ignoresSafeArea())
+            .navigationTitle("Help")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        
+        private func helpCard(icon: String, title: String, description: String) -> some View {
+            HStack(alignment: .top, spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(EmoryTheme.primary.opacity(0.15))
-                        .frame(width: 80, height: 80)
-                    Image(systemName: "questionmark.circle.fill")
-                        .font(.system(size: 40))
+                        .fill(EmoryTheme.primary.opacity(0.12))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: icon)
+                        .font(.system(size: 18))
                         .foregroundStyle(EmoryTheme.primary)
                 }
-                .padding(.top, 20)
-
-                Text("How can we help?")
-                    .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
-                    .foregroundStyle(EmoryTheme.textPrimary)
-
-                VStack(spacing: 12) {
-                    helpCard(
-                        icon: "eye.fill",
-                        title: "Using Your Glasses",
-                        description: "Tap 'Glasses' at the bottom, then tap 'Start Stream' to begin."
-                    )
-
-                    helpCard(
-                        icon: "person.2.fill",
-                        title: "Adding People",
-                        description: "Go to Home, tap 'People', then tap the + button to add someone new."
-                    )
-
-                    helpCard(
-                        icon: "mic.fill",
-                        title: "Testing Audio",
-                        description: "Go to Glasses, tap 'Start Mic', then hold 'Hold to Record' to test."
-                    )
-
-                    helpCard(
-                        icon: "phone.fill",
-                        title: "Need More Help?",
-                        description: "Ask your caregiver or family member for assistance."
-                    )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                        .foregroundStyle(EmoryTheme.textPrimary)
+                    Text(description)
+                        .font(.system(size: settings.fontSize.captionSize))
+                        .foregroundStyle(EmoryTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                
+                Spacer()
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 40)
+            .padding(16)
+            .emoryCard()
         }
-        .background(EmoryTheme.background.ignoresSafeArea())
-        .navigationTitle("Help")
-        .navigationBarTitleDisplayMode(.inline)
     }
-
-    private func helpCard(icon: String, title: String, description: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(EmoryTheme.primary.opacity(0.12))
-                    .frame(width: 44, height: 44)
-                Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .foregroundStyle(EmoryTheme.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
-                    .foregroundStyle(EmoryTheme.textPrimary)
-                Text(description)
-                    .font(.system(size: settings.fontSize.captionSize))
-                    .foregroundStyle(EmoryTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-        }
-        .padding(16)
-        .emoryCard()
-    }
-}

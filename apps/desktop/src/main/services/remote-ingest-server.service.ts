@@ -22,6 +22,7 @@ import {
   resolveListenHost,
 } from './remote-ingest-network.js'
 import { MobileApiService } from './mobile-api.service.js'
+import { PersonFocusService, type PersonFocusMessage } from './person-focus.service.js'
 
 const MAX_SIGNALING_MESSAGE_BYTES = 512_000
 
@@ -39,6 +40,11 @@ function remoteIngestClientIp(req: http.IncomingMessage): string {
   }
   const a = req.socket.remoteAddress
   return a ?? 'unknown'
+}
+
+function isLoopbackClient(req: http.IncomingMessage): boolean {
+  const address = req.socket.remoteAddress ?? ''
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
 /** Structured line for terminal when the iOS app (or Test Connection) hits HTTP APIs. */
@@ -146,11 +152,26 @@ export class RemoteIngestServerService {
   private beaconTimer: ReturnType<typeof setInterval> | null = null
   private lastError: string | null = null
   private bridgeProcessor: FrameProcessor | null = null
+  private readonly personFocusService: PersonFocusService | null
 
   constructor(
     private readonly mobileApiService?: MobileApiService,
     private readonly bridgeLive?: RemoteIngestBridgeLiveDeps,
-  ) {}
+  ) {
+    this.personFocusService = bridgeLive
+      ? new PersonFocusService(bridgeLive.peopleRepo, (message) => this.broadcastPersonFocus(message))
+      : null
+  }
+
+  private broadcastPersonFocus(message: PersonFocusMessage): void {
+    const mobile = this.mobileSig
+    if (!mobile || mobile.readyState !== WebSocket.OPEN) return
+    try {
+      mobile.send(JSON.stringify(message))
+    } catch {
+      // ignore send errors while sockets are closing
+    }
+  }
 
   private disposeBridgeProcessor(): void {
     if (this.bridgeProcessor) {
@@ -179,6 +200,10 @@ export class RemoteIngestServerService {
           // ignore send errors (socket closing)
         }
       }
+      this.personFocusService?.observe({
+        timestamp: result.timestamp,
+        matches: result.matches,
+      })
     })
     proc.setFaceService(this.bridgeLive.getFaceService())
     this.bridgeProcessor = proc
@@ -411,6 +436,7 @@ export class RemoteIngestServerService {
       )
       if (this.publisher === ws) {
         this.disposeBridgeProcessor()
+        this.personFocusService?.clear('publisher_closed')
         this.publisher = null
       }
     }
@@ -511,6 +537,14 @@ export class RemoteIngestServerService {
         desktopConnected: !!(this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN),
       }),
     )
+    const currentFocus = this.personFocusService?.getCurrentFocus()
+    if (currentFocus && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify(currentFocus))
+      } catch {
+        // ignore send errors while sockets are closing
+      }
+    }
     ws.on('message', (data, isBinary) => {
       if (isBinary) return
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
@@ -710,6 +744,24 @@ export class RemoteIngestServerService {
           'Cache-Control': 'no-store',
         })
         res.end(body)
+        return
+      }
+
+      const debugFocusMatch = pathname.match(/^\/api\/v1\/debug\/person-focus\/([^/]+)$/)
+      if (isLoopbackClient(req) && req.method === 'POST' && debugFocusMatch) {
+        const personId = decodeURIComponent(debugFocusMatch[1] ?? '')
+        const message = this.personFocusService?.forceFocusPerson(personId)
+        if (!message) {
+          this.sendJson(res, 404, { error: 'Person not found or focus service unavailable' })
+          return
+        }
+        this.sendJson(res, 200, { ok: true, event: message })
+        return
+      }
+
+      if (isLoopbackClient(req) && req.method === 'DELETE' && pathname === '/api/v1/debug/person-focus') {
+        const message = this.personFocusService?.clear('manual_clear')
+        this.sendJson(res, 200, { ok: true, event: message })
         return
       }
 
