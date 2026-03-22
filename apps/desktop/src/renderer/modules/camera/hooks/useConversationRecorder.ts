@@ -29,10 +29,14 @@ type UseConversationRecorderResult = {
  * Face-driven conversation capture: arm when a locked identity is primary (largest bbox),
  * record after start debounce, freeze personId for the segment, stop after stop debounce
  * when that person is absent from tracks.
+ *
+ * When `remoteAudioStream` is provided (remote ingest mode), it is used for recording
+ * instead of the local Windows microphone.
  */
 export function useConversationRecorder(
   isActive: boolean,
   tracksRef: RefObject<IdentityTrack[]>,
+  remoteAudioStream?: MediaStream | null,
 ): UseConversationRecorderResult {
   const [phase, setPhase] = useState<ConversationRecorderPhase>('idle')
   const [error, setError] = useState<string | null>(null)
