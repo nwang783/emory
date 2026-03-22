@@ -60,11 +60,13 @@ final class DesktopRecognitionStore {
     }
 
     func refreshConnection() {
+        print("[RecogStore] refreshConnection called (mockMode=\(AppSettings.shared.isMockMode))")
         lastSequence = 0
         lastRecognizedName = nil
         presentedRecognition = nil
 
         guard !AppSettings.shared.isMockMode else {
+            print("[RecogStore] Mock mode ON — not connecting signaling")
             signalingService.stop()
             handleStatusChange(.disconnected)
             return
@@ -105,10 +107,16 @@ final class DesktopRecognitionStore {
     }
 
     private func handleFocusEvent(_ event: DesktopPersonFocusEvent) {
-        guard event.sequence > lastSequence else { return }
+        print("[RecogStore] handleFocusEvent: seq=\(event.sequence), person=\(event.person?.name ?? "nil"), reason=\(event.reason)")
+
+        guard event.sequence > lastSequence else {
+            print("[RecogStore] Skipping — seq \(event.sequence) <= lastSequence \(lastSequence)")
+            return
+        }
         lastSequence = event.sequence
 
         guard let recognizedPerson = event.person else {
+            print("[RecogStore] No person in event, skipping")
             return
         }
 
@@ -116,9 +124,11 @@ final class DesktopRecognitionStore {
 
         let signature = makeDismissalSignature(personId: recognizedPerson.id, sequence: event.sequence)
         if dismissedRecognitionSignature == signature {
+            print("[RecogStore] Already dismissed this recognition, skipping")
             return
         }
 
+        print("[RecogStore] Presenting recognition popup for \(recognizedPerson.name)!")
         presentedRecognition = PresentedRecognition(
             person: recognizedPerson.asPersonSummary(),
             sequence: event.sequence,

@@ -17,7 +17,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		6FDCEFD82F6F086B000FB080 /* Exceptions for "emory" folder in "emory" target */ = {
+		6FDCF0F52F6F91A9000FB080 /* Exceptions for "emory" folder in "emory" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -30,7 +30,7 @@
 		6FDCEF532F6F0387000FB080 /* emory */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				6FDCEFD82F6F086B000FB080 /* Exceptions for "emory" folder in "emory" target */,
+				6FDCF0F52F6F91A9000FB080 /* Exceptions for "emory" folder in "emory" target */,
 			);
 			path = emory;
 			sourceTree = "<group>";
@@ -206,6 +206,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = emory/Info.plist;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -263,6 +264,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = emory/Info.plist;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
