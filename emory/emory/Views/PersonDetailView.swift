@@ -219,7 +219,7 @@ struct PersonDetailView: View {
                                             Text(memory.memoryText)
                                                 .font(.system(size: settings.fontSize.captionSize, weight: .medium))
                                                 .foregroundStyle(EmoryTheme.textPrimary)
-                                            Text(memory.memoryDate)
+                                            Text(friendlyDate(memory.memoryDate))
                                                 .font(.system(size: settings.fontSize.captionSize - 2))
                                                 .foregroundStyle(EmoryTheme.textSecondary)
                                         }
@@ -245,7 +245,7 @@ struct PersonDetailView: View {
                                             Text(encounter.personName)
                                                 .font(.system(size: settings.fontSize.captionSize, weight: .medium))
                                                 .foregroundStyle(EmoryTheme.textPrimary)
-                                            Text(encounter.startedAt)
+                                            Text(friendlyDate(encounter.startedAt))
                                                 .font(.system(size: settings.fontSize.captionSize - 2))
                                                 .foregroundStyle(EmoryTheme.textSecondary)
                                         }
@@ -640,6 +640,25 @@ struct PersonDetailView: View {
         case "routine": return "clock"
         default: return "sparkles"
         }
+    }
+
+    /// Converts ISO date strings like "2026-03-22T15:15:00Z" to "March 22, 2026 at 3:15 PM"
+    private func friendlyDate(_ isoString: String) -> String {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        // Try with fractional seconds first, then without
+        let date = iso.date(from: isoString) ?? {
+            iso.formatOptions = [.withInternetDateTime]
+            return iso.date(from: isoString)
+        }()
+
+        guard let date else { return isoString }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private func importPickedVideo(from item: PhotosPickerItem) async {

@@ -33,7 +33,7 @@ final class BridgeServerService {
 
     // Frame sampling
     private var frameCounter: Int = 0
-    let frameSampleInterval: Int = 1 // Send every frame (full 15fps to server)
+    let frameSampleInterval: Int = 2 // Send every 2nd frame (~15fps to server)
 
     // Results
     private var faceResultContinuation: AsyncStream<FaceResultMessage>.Continuation?
@@ -76,14 +76,32 @@ final class BridgeServerService {
         let task = urlSession.webSocketTask(with: wsURL)
         task.resume()
         self.webSocketTask = task
-        connectionStatus = .connected
-        reconnectDelay = 1_000_000_000
 
-        print("[Bridge] Connected to \(url)")
+        print("[Bridge] Connecting to \(url)...")
 
-        // Start receive loop
+        // Start receive loop — the first successful receive confirms the connection is open
         receiveTask = Task { [weak self] in
-            await self?.receiveLoop()
+            guard let self = self else { return }
+            // Send a ping to verify the connection is actually open
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    task.sendPing { error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume()
+                        }
+                    }
+                }
+                self.connectionStatus = .connected
+                self.reconnectDelay = 1_000_000_000
+                print("[Bridge] Connected to \(url)")
+            } catch {
+                print("[Bridge] Ping failed, connection not ready: \(error.localizedDescription)")
+                self.handleDisconnect()
+                return
+            }
+            await self.receiveLoop()
         }
     }
 

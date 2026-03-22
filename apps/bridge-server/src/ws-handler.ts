@@ -19,6 +19,7 @@ export class WsHandler {
   private frameProcessor: FrameProcessor
   private audioProcessor: AudioProcessor
   onFrame: ((jpeg: Buffer) => void) | null = null
+  onAudio: ((pcm: Buffer, sampleRate: number, channels: number) => void) | null = null
 
   constructor(ws: WebSocket, frameProcessor: FrameProcessor, audioProcessor: AudioProcessor) {
     this.ws = ws
@@ -75,12 +76,18 @@ export class WsHandler {
 
       case MSG_AUDIO_CHUNK: {
         const meta = parsed.metadata as unknown as AudioChunkMetadata
+        const sr = meta.sr || 48000
+        const ch = meta.ch || 1
         this.audioProcessor.addChunk(
           parsed.payload,
-          meta.sr || 48000,
-          meta.ch || 1,
+          sr,
+          ch,
           this.frameProcessor.visiblePersonIds,
         )
+        // Forward audio to browser viewers for live playback
+        if (this.onAudio) {
+          this.onAudio(parsed.payload, sr, ch)
+        }
         break
       }
 

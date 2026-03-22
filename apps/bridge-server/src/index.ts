@@ -95,6 +95,7 @@ async function main(): Promise<void> {
 <div class="header">
   <h1>Emory Live</h1>
   <span class="badge" id="status">Connecting...</span>
+  <span class="badge" id="audio" style="background:#1a1a1a;color:#999">Click for audio</span>
   <span class="badge" id="fps">-- fps</span>
 </div>
 <div id="matches"></div>
@@ -115,9 +116,58 @@ let fpsFrames = 0;
 ws.onopen = () => { statusEl.textContent = 'Waiting for stream...'; };
 ws.onclose = () => { statusEl.textContent = 'Disconnected'; statusEl.classList.remove('live'); };
 
+// Audio playback via Web Audio API
+let audioCtx = null;
+let audioStarted = false;
+
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new AudioContext();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+// Click to enable audio (browser requires user gesture)
+document.addEventListener('click', () => {
+  ensureAudioCtx();
+  audioStarted = true;
+  document.getElementById('audio').textContent = 'Audio ON';
+  document.getElementById('audio').style.background = '#1a2e1a';
+  document.getElementById('audio').style.color = '#7BAE7F';
+  console.log('Audio playback enabled');
+}, { once: true });
+
 ws.onmessage = (e) => {
-  // Binary = JPEG frame
   if (e.data instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(e.data);
+
+    // Check first byte: 0x01 = audio packet
+    if (bytes[0] === 0x01 && bytes.length > 6) {
+      if (!audioStarted || !audioCtx) return;
+      const view = new DataView(e.data);
+      const sampleRate = view.getUint32(1, true);
+      const channels = bytes[5];
+      const pcmData = new Int16Array(e.data, 6);
+
+      // Convert Int16 PCM to Float32 for Web Audio
+      const floatData = new Float32Array(pcmData.length);
+      for (let i = 0; i < pcmData.length; i++) {
+        floatData[i] = pcmData[i] / 32768.0;
+      }
+
+      const buffer = audioCtx.createBuffer(channels, floatData.length, sampleRate);
+      buffer.getChannelData(0).set(floatData);
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start();
+      return;
+    }
+
+    // Otherwise it's a JPEG frame
     const blob = new Blob([e.data], { type: 'image/jpeg' });
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -225,6 +275,24 @@ ws.onmessage = (e) => {
       for (const viewer of viewerClients) {
         if (viewer.readyState === viewer.OPEN) {
           viewer.send(jpeg) // Send raw JPEG binary — much faster than base64
+        }
+      }
+    }
+
+    // Forward audio to browser viewers for live playback
+    // Use message type prefix byte to distinguish audio from video in binary messages
+    handler.onAudio = (pcm, sampleRate, channels) => {
+      // Prepend a 1-byte type marker: 0x01 = audio (0x00 would be video/jpeg)
+      // Then 4 bytes sample rate (LE), 1 byte channels, then PCM data
+      const header = Buffer.alloc(6)
+      header[0] = 0x01 // audio marker
+      header.writeUInt32LE(sampleRate, 1)
+      header[5] = channels
+      const packet = Buffer.concat([header, pcm])
+
+      for (const viewer of viewerClients) {
+        if (viewer.readyState === viewer.OPEN) {
+          viewer.send(packet)
         }
       }
     }
