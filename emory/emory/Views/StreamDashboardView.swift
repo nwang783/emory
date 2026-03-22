@@ -5,7 +5,7 @@ import SwiftUI
 // Restyled with Emory theme for dementia patients.
 
 struct StreamDashboardView: View {
-    @State private var viewModel = StreamViewModel()
+    private var viewModel = StreamViewModel.shared
     @State private var settings = AppSettings.shared
     @State private var recognizedPerson: Person? = nil
     @State private var showRecognitionBanner = false

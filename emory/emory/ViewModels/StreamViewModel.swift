@@ -57,17 +57,18 @@ final class StreamViewModel {
     private var lastAudioLevelUpdate: Date = .distantPast
     private var isStreaming: Bool = false
 
+    // Shared singleton so enrollment can grab frames even when on another tab
+    static let shared = StreamViewModel()
+
     // Shared frame for enrollment — other views can grab the latest frame
-    private static weak var _activeInstance: StreamViewModel?
     static var currentEnrollmentFrame: UIImage? {
-        _activeInstance?.currentFrame
+        shared.currentFrame
     }
 
     // MARK: - Init (lightweight — no SDK or stream work)
 
-    init() {
+    private init() {
         log("ViewModel ready")
-        Self._activeInstance = self
     }
 
     // MARK: - Actions
