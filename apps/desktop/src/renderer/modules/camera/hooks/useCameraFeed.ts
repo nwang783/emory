@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWebcam } from './useWebcam'
 import { useRemoteIngestViewer, type RemoteIngestViewerPhase } from './useRemoteIngestViewer'
 import { useRemoteIngestWebRtc, type RemoteIngestWebRtcPhase } from './useRemoteIngestWebRtc'
 import { useRemoteIngestStore } from '@/shared/stores/remote-ingest.store'
+import { logRemoteIngest } from '@/modules/camera/lib/remote-ingest-debug'
 
 /** Active remote hook phase when using ingest (JPEG or WebRTC); null for local camera. */
 export type RemoteIngestConnectionPhase = RemoteIngestViewerPhase | RemoteIngestWebRtcPhase
@@ -19,7 +20,10 @@ export type UseCameraFeedResult = {
   setPreferLocalOverride: (value: boolean) => void
   remoteIngestAvailable: boolean
   remoteTransport: RemoteIngestTransport | null
-  /** True when face / conversation pipelines should run (remote = only when media is flowing). */
+  /**
+   * True when face / conversation pipelines may run.
+   * Remote: true once ingest session is active (connecting / waiting / streaming), not only after first frame.
+   */
   feedReady: boolean
   isActive: boolean
   error: string | null
@@ -181,6 +185,17 @@ export function useCameraFeed(): UseCameraFeedResult {
       ? webrtcRemote.phase
       : jpegRemote.phase
     : null
+
+  useEffect(() => {
+    if (mode !== 'remote') return
+    logRemoteIngest('camera_feed_remote', {
+      feedReady,
+      isActive,
+      remotePhase,
+      remoteTransport,
+      error: error ?? null,
+    })
+  }, [mode, feedReady, isActive, remotePhase, remoteTransport, error])
 
   return {
     mode,

@@ -35,7 +35,7 @@ struct SettingsView: View {
                             .font(.system(size: settings.fontSize.bodySize, weight: .medium))
                             .foregroundStyle(EmoryTheme.textPrimary)
                         Text(
-                            "Important: use http:// not https:// — the desktop has no TLS on this port; https will show a TLS error. Same Wi‑Fi LAN works without Tailscale. Example: http://10.0.0.237:18763 (port 18763). Tailscale is optional (http://100.x.y.z:18763). Do not use ws:// here."
+                            "Use http:// (not https://) and host:port, e.g. http://10.0.0.237:18763. Test Connection checks /health. When you start streaming, the app opens ws://…/ingest?role=publisher to the same host — on the desktop turn OFF “Prefer WebRTC video” until the phone sends WebRTC; leave it off for JPEG ingest from this app."
                         )
                             .font(.system(size: settings.fontSize.captionSize))
                             .foregroundStyle(EmoryTheme.textSecondary)
