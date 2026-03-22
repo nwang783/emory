@@ -3,17 +3,10 @@ import Foundation
 
 @MainActor
 final class RecognitionAnnouncementPlayer {
-    private struct SessionSnapshot {
-        let category: AVAudioSession.Category
-        let mode: AVAudioSession.Mode
-        let options: AVAudioSession.CategoryOptions
-        let shouldReactivate: Bool
-    }
-
     static let shared = RecognitionAnnouncementPlayer()
 
     private var audioPlayer: AVAudioPlayer?
-    private var sessionSnapshot: SessionSnapshot?
+    private var sessionSnapshot: MediaPlaybackAudioSession.Snapshot?
 
     private init() {}
 
@@ -45,29 +38,18 @@ final class RecognitionAnnouncementPlayer {
 
         let session = AVAudioSession.sharedInstance()
         logAudioSession("before-playback-config", session: session)
-        sessionSnapshot = SessionSnapshot(
-            category: session.category,
-            mode: session.mode,
-            options: session.categoryOptions,
-            shouldReactivate: MicrophoneCaptureService.shared.isCapturing
-        )
-        try session.setCategory(
-            .playAndRecord,
-            mode: .default,
+        sessionSnapshot = try MediaPlaybackAudioSession.begin(
+            mode: .spokenAudio,
             options: [
-                .defaultToSpeaker,
                 .duckOthers,
                 .interruptSpokenAudioAndMixWithOthers,
             ]
         )
-        if let builtInMic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
-            try? session.setPreferredInput(builtInMic)
-        }
-        try session.setActive(true)
         logAudioSession("after-playback-config", session: session)
 
         let player = try AVAudioPlayer(data: data)
         player.prepareToPlay()
+        player.volume = 1.0
         audioPlayer = player
 
         guard player.play() else {
@@ -99,27 +81,10 @@ final class RecognitionAnnouncementPlayer {
 
     private func restoreAudioSessionIfNeeded() {
         let session = AVAudioSession.sharedInstance()
-
-        guard let sessionSnapshot else {
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
-            return
-        }
-
+        let snapshot = sessionSnapshot
         self.sessionSnapshot = nil
-
-        do {
-            try session.setCategory(sessionSnapshot.category, mode: sessionSnapshot.mode, options: sessionSnapshot.options)
-            if sessionSnapshot.shouldReactivate {
-                try session.setActive(true)
-                MicrophoneCaptureService.shared.refreshCaptureAfterSessionChange()
-                logAudioSession("after-session-restore-reactivated", session: session)
-            } else {
-                try session.setActive(false, options: .notifyOthersOnDeactivation)
-                logAudioSession("after-session-restore-deactivated", session: session)
-            }
-        } catch {
-            print("[RecognitionAnnouncement] Failed to restore audio session: \(error.localizedDescription)")
-        }
+        MediaPlaybackAudioSession.restore(snapshot)
+        logAudioSession("after-session-restore", session: session)
     }
 
     private func logAudioSession(_ label: String, session: AVAudioSession) {

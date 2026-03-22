@@ -40,6 +40,7 @@ struct ProfileVideoPlayerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer
+    @State private var sessionSnapshot: MediaPlaybackAudioSession.Snapshot?
 
     init(title: String, url: URL) {
         self.title = title
@@ -76,11 +77,15 @@ struct ProfileVideoPlayerSheet: View {
             }
         }
         .onAppear {
+            sessionSnapshot = try? MediaPlaybackAudioSession.begin(mode: .moviePlayback)
+            player.volume = 1.0
             player.play()
         }
         .onDisappear {
             player.pause()
             player.seek(to: .zero)
+            MediaPlaybackAudioSession.restore(sessionSnapshot)
+            sessionSnapshot = nil
         }
     }
 }
