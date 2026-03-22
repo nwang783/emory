@@ -71,6 +71,50 @@ struct DesktopApiClient {
         try await get("api/v1/home")
     }
 
+    func uploadConversationRecording(
+        personId: String,
+        recordedAt: Date,
+        durationMs: Int?,
+        mimeType: String,
+        audioData: Data
+    ) async throws -> DesktopConversationUploadResponse {
+        var components = URLComponents(url: baseURL.appending(path: "api/v1/conversations/upload"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "personId", value: personId),
+            URLQueryItem(name: "recordedAt", value: ISO8601DateFormatter().string(from: recordedAt)),
+            URLQueryItem(name: "durationMs", value: durationMs.map(String.init))
+        ].compactMap { item in
+            guard item.value != nil else { return nil }
+            return item
+        }
+
+        guard let url = components?.url else {
+            throw DesktopApiError.invalidBaseURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        request.httpBody = audioData
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw DesktopApiError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if let uploadError = try? decoder.decode(DesktopConversationUploadResponse.self, from: data),
+               let message = uploadError.error,
+               !message.isEmpty {
+                throw NSError(domain: "DesktopApiClient", code: http.statusCode, userInfo: [
+                    NSLocalizedDescriptionKey: message
+                ])
+            }
+            throw DesktopApiError.requestFailed(http.statusCode)
+        }
+
+        return try decoder.decode(DesktopConversationUploadResponse.self, from: data)
+    }
+
     func signalingWebSocketURL(health: DesktopHealthResponse, role: String) throws -> URL {
         guard let host = baseURL.host, !host.isEmpty else {
             throw DesktopApiError.invalidBaseURL

@@ -49,7 +49,7 @@ final class StreamViewModel {
     // MARK: - Private
 
     private var service: MetaWearablesService?
-    private let micService = MicrophoneCaptureService()
+    private let micService = MicrophoneCaptureService.shared
     let bridgeService = BridgeServerService()
     private var streamTasks: [Task<Void, Never>] = []
     private var fpsTimer: Timer?
@@ -122,6 +122,8 @@ final class StreamViewModel {
         guard isStreaming else { return }
         log("Stopping session...")
 
+        ConversationCaptureCoordinator.shared.finishActiveConversation(reason: "session_stopped")
+
         // Stop mic capture
         bridgeService.sendSessionEnd()
         micService.stop()
@@ -174,6 +176,7 @@ final class StreamViewModel {
 
     func stopMicOnly() {
         guard isMicCapturing else { return }
+        ConversationCaptureCoordinator.shared.finishActiveConversation(reason: "mic_stopped")
         micService.stop()
         isMicCapturing = false
         audioLevel = 0.0
@@ -411,6 +414,7 @@ final class StreamViewModel {
         streamTasks.removeAll()
         fpsTimer?.invalidate()
         fpsTimer = nil
+        ConversationCaptureCoordinator.shared.finishActiveConversation(reason: "cleanup")
         micService.stop()
         bridgeService.disconnect()
         service = nil

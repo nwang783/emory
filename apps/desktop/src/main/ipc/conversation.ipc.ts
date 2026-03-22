@@ -1,24 +1,18 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { randomUUID } from 'node:crypto'
 import type {
-  ConversationRecording,
   ConversationRepository,
-  EncounterRepository,
-  PeopleRepository,
-  PersonMemory,
 } from '@emory/db'
-import { ConversationStorageService } from '../services/conversation-storage.service.js'
 import type {
   ConversationProcessingService,
   ProcessRecordingInput,
 } from '../services/conversation-processing.service.js'
+import type { ConversationIngestService } from '../services/conversation-ingest.service.js'
 import type {
   MemoryQueryService,
   QueryMemoriesFromTextInput,
   QueryMemoriesInput,
 } from '../services/memory-query.service.js'
-import { getActiveSessionId } from './encounter.ipc.js'
 
 type SaveAndProcessPayload = {
   personId: string
@@ -27,14 +21,6 @@ type SaveAndProcessPayload = {
   durationMs?: number | null
   audioBytes: Uint8Array
 }
-
-type SaveAndProcessSuccess = {
-  success: true
-  recording: ConversationRecording
-  memories: PersonMemory[]
-}
-
-type SaveAndProcessFailure = { success: false; error: string }
 
 function toUint8Array(value: unknown): Uint8Array | null {
   if (value instanceof Uint8Array) return value
@@ -50,17 +36,14 @@ function toUint8Array(value: unknown): Uint8Array | null {
 
 export function registerConversationIpc(
   _mainWindow: BrowserWindow,
-  processingService: ConversationProcessingService,
+  _processingService: ConversationProcessingService,
+  conversationIngestService: ConversationIngestService,
   conversationRepo: ConversationRepository,
-  encounterRepo: EncounterRepository,
-  peopleRepo: PeopleRepository,
   memoryQueryService: MemoryQueryService,
 ): void {
-  const storage = new ConversationStorageService()
-
   ipcMain.handle(
     'conversation:save-and-process',
-    async (_event, payload: unknown): Promise<SaveAndProcessSuccess | SaveAndProcessFailure> => {
+    async (_event, payload: unknown) => {
       if (!payload || typeof payload !== 'object') {
         return { success: false, error: 'Invalid payload' }
       }
@@ -80,77 +63,13 @@ export function registerConversationIpc(
       if (!bytes || bytes.byteLength === 0) {
         return { success: false, error: 'audioBytes is required' }
       }
-
-      if (!peopleRepo.findById(p.personId)) {
-        return { success: false, error: 'Person not found' }
-      }
-
-      const recordedAtDate = new Date(p.recordedAt)
-      if (Number.isNaN(recordedAtDate.getTime())) {
-        return { success: false, error: 'recordedAt must be a valid ISO date string' }
-      }
-
-      const durationMs =
-        typeof p.durationMs === 'number' && Number.isFinite(p.durationMs) ? Math.round(p.durationMs) : null
-
-      const recordingId = randomUUID()
-      let audioPath: string | null = null
-
-      try {
-        const saved = await storage.saveRecording({
-          recordingId,
-          mimeType: p.mimeType,
-          bytes,
-          recordedAt: recordedAtDate,
-        })
-        audioPath = saved.audioPath
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        return { success: false, error: `Failed to save audio: ${message}` }
-      }
-
-      let encounterId: string | null = null
-      const sessionId = getActiveSessionId()
-      if (sessionId) {
-        const active = encounterRepo.findActiveEncounter(p.personId, sessionId)
-        encounterId = active?.id ?? null
-      }
-
-      let createdRecordingId: string | null = null
-      try {
-        const recording = conversationRepo.createRecording({
-          id: recordingId,
-          personId: p.personId,
-          encounterId,
-          recordedAt: p.recordedAt,
-          audioPath: audioPath!,
-          mimeType: p.mimeType,
-          durationMs,
-        })
-        createdRecordingId = recording.id
-
-        const processInput: ProcessRecordingInput = {
-          recordingId: recording.id,
-          personId: p.personId,
-          encounterId,
-          audioPath: audioPath!,
-          mimeType: p.mimeType,
-          durationMs,
-          recordedAt: p.recordedAt,
-        }
-
-        const result = await processingService.processRecording(processInput)
-        return { success: true, recording: result.recording, memories: result.memories }
-      } catch (err) {
-        if (createdRecordingId) {
-          conversationRepo.deleteRecordingById(createdRecordingId)
-        }
-        if (audioPath) {
-          await storage.removeFile(audioPath)
-        }
-        const message = err instanceof Error ? err.message : String(err)
-        return { success: false, error: `Failed to process recording: ${message}` }
-      }
+      return conversationIngestService.saveAndProcessBytes({
+        personId: p.personId,
+        recordedAt: p.recordedAt,
+        mimeType: p.mimeType,
+        durationMs: p.durationMs,
+        audioBytes: bytes,
+      })
     },
   )
 

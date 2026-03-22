@@ -10,6 +10,13 @@ import AVFoundation
 
 @MainActor
 final class MicrophoneCaptureService {
+    struct ConversationRecordingFile {
+        let url: URL
+        let duration: TimeInterval
+        let mimeType: String
+    }
+
+    static let shared = MicrophoneCaptureService()
 
     // MARK: - State
 
@@ -27,6 +34,11 @@ final class MicrophoneCaptureService {
     private(set) var isRecording = false
     private var recordingBuffers: [AVAudioPCMBuffer] = []
     private var recordingFormat: AVAudioFormat?
+    private(set) var isConversationRecording = false
+    private var conversationRecordingFile: AVAudioFile?
+    private var conversationRecordingURL: URL?
+    private var conversationRecordingStartedAt: Date?
+    private var conversationRecordingWriteError: String?
 
     // External audio callback (for bridge server forwarding)
     var onAudioBuffer: ((AVAudioPCMBuffer, Double, Int) -> Void)?
@@ -77,6 +89,17 @@ final class MicrophoneCaptureService {
 
             // Forward to bridge server if callback is set
             self.onAudioBuffer?(buffer, format.sampleRate, Int(format.channelCount))
+
+            if self.isConversationRecording, let file = self.conversationRecordingFile {
+                do {
+                    try file.write(from: buffer)
+                } catch {
+                    self.conversationRecordingWriteError = error.localizedDescription
+                    self.isConversationRecording = false
+                    self.conversationRecordingFile = nil
+                    print("[Mic] Conversation recording write failed: \(error.localizedDescription)")
+                }
+            }
 
             // Store buffer on a background queue to avoid main thread contention
             self.bufferQueue.async { [weak self] in
@@ -161,6 +184,59 @@ final class MicrophoneCaptureService {
         }
 
         print("[Mic] Recording stopped: \(recordingBuffers.count) buffers, \(String(format: "%.1f", recordingDuration))s")
+    }
+
+    func startConversationRecording() throws {
+        guard isCapturing else {
+            throw NSError(domain: "MicrophoneCaptureService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Microphone capture is not active"
+            ])
+        }
+        guard !isConversationRecording else { return }
+
+        let format = audioEngine.inputNode.outputFormat(forBus: 0)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("emory-conversations", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
+        let url = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
+        let file = try AVAudioFile(
+            forWriting: url,
+            settings: format.settings,
+            commonFormat: format.commonFormat,
+            interleaved: format.isInterleaved
+        )
+
+        conversationRecordingFile = file
+        conversationRecordingURL = url
+        conversationRecordingStartedAt = Date()
+        conversationRecordingWriteError = nil
+        isConversationRecording = true
+        print("[Mic] Conversation recording started: \(url.lastPathComponent)")
+    }
+
+    func stopConversationRecording() -> ConversationRecordingFile? {
+        guard isConversationRecording || conversationRecordingURL != nil else { return nil }
+
+        let url = conversationRecordingURL
+        let startedAt = conversationRecordingStartedAt
+        let writeError = conversationRecordingWriteError
+
+        isConversationRecording = false
+        conversationRecordingFile = nil
+        conversationRecordingURL = nil
+        conversationRecordingStartedAt = nil
+        conversationRecordingWriteError = nil
+
+        guard let url else { return nil }
+
+        if let writeError {
+            try? FileManager.default.removeItem(at: url)
+            print("[Mic] Conversation recording discarded after write error: \(writeError)")
+            return nil
+        }
+
+        let duration = startedAt.map { Date().timeIntervalSince($0) } ?? 0
+        print("[Mic] Conversation recording stopped: \(url.lastPathComponent), \(String(format: "%.1f", duration))s")
+        return ConversationRecordingFile(url: url, duration: duration, mimeType: "audio/wav")
     }
 
     // MARK: - Playback

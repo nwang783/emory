@@ -11,9 +11,11 @@ import { registerTtsIpc } from './ipc/tts.ipc.js'
 import { CleanupService } from './services/cleanup.service.js'
 import { CartesiaTtsService, getTtsRootDir } from './services/cartesia-tts.service.js'
 import { getConversationsRootDir } from './services/conversation-storage.service.js'
+import { ConversationStorageService } from './services/conversation-storage.service.js'
 import { DeepgramService } from './services/deepgram.service.js'
 import { MemoryExtractionService } from './services/memory-extraction.service.js'
 import { ConversationProcessingService } from './services/conversation-processing.service.js'
+import { ConversationIngestService } from './services/conversation-ingest.service.js'
 import { MemoryQueryUnderstandingService } from './services/memory-query-understanding.service.js'
 import { MemoryAnswerService } from './services/memory-answer.service.js'
 import { MemoryQueryService } from './services/memory-query.service.js'
@@ -22,6 +24,7 @@ import { RemoteIngestSettingsService } from './services/remote-ingest-settings.s
 import { RemoteIngestServerService } from './services/remote-ingest-server.service.js'
 import { registerRemoteIngestIpc } from './ipc/remote-ingest.ipc.js'
 import { MobileApiService } from './services/mobile-api.service.js'
+import { getActiveSessionId } from './ipc/encounter.ipc.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -151,7 +154,15 @@ app.whenReady().then(async () => {
     peopleRepo,
     relationshipRepo,
     deepgramService,
-    memoryExtractionService,
+      memoryExtractionService,
+  )
+  const conversationIngestService = new ConversationIngestService(
+    conversationProcessingService,
+    conversationRepo,
+    encounterRepo,
+    peopleRepo,
+    getActiveSessionId,
+    new ConversationStorageService(),
   )
   const memoryQueryService = new MemoryQueryService(
     conversationRepo,
@@ -164,10 +175,14 @@ app.whenReady().then(async () => {
 
   const remoteIngestSettings = new RemoteIngestSettingsService(app.getPath('userData'))
   const mobileApiService = new MobileApiService(peopleRepo, encounterRepo, conversationRepo)
-  const remoteIngestServer = new RemoteIngestServerService(mobileApiService, {
-    peopleRepo,
-    getFaceService: getMainFaceService,
-  })
+  const remoteIngestServer = new RemoteIngestServerService(
+    mobileApiService,
+    {
+      peopleRepo,
+      getFaceService: getMainFaceService,
+    },
+    conversationIngestService,
+  )
   registerRemoteIngestIpc(remoteIngestSettings, remoteIngestServer)
   const remoteIngestPersisted = await remoteIngestSettings.load()
   if (remoteIngestPersisted.enabled) {
@@ -182,9 +197,8 @@ app.whenReady().then(async () => {
   registerConversationIpc(
     mainWindow,
     conversationProcessingService,
+    conversationIngestService,
     conversationRepo,
-    encounterRepo,
-    peopleRepo,
     memoryQueryService,
   )
 
