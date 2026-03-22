@@ -74,7 +74,7 @@ final class MicrophoneCaptureService {
             // Skip this when glasses are streaming — the SDK already configured the session
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [
                 .defaultToSpeaker,
-                .allowBluetooth,
+                .allowBluetoothHFP,
                 .allowBluetoothA2DP
             ])
             try session.setActive(true)
@@ -351,7 +351,6 @@ final class MicrophoneCaptureService {
             let bluetooth = availableInputs.first { port in
                 let isBT = [
                     AVAudioSession.Port.bluetoothHFP,
-                    AVAudioSession.Port.bluetoothA2DP,
                     AVAudioSession.Port.bluetoothLE
                 ].contains(port.portType)
                 let name = port.portName.lowercased()
@@ -361,7 +360,6 @@ final class MicrophoneCaptureService {
             // If no Meta device found, fall back to any Bluetooth input
             let anyBluetooth = bluetooth ?? availableInputs.first { port in
                 [AVAudioSession.Port.bluetoothHFP,
-                 AVAudioSession.Port.bluetoothA2DP,
                  AVAudioSession.Port.bluetoothLE].contains(port.portType)
             }
             if let bt = anyBluetooth {

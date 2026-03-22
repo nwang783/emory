@@ -96,8 +96,10 @@ final class RecognitionExperienceCoordinator {
 
     private func announcementSkipReason(for personId: String) -> String? {
         let settings = AppSettings.shared
-        if settings.recognitionAnnouncementsRequireMetaRoute && !AudioRouteDetector.isMetaAudioRouteActive() {
-            return "meta_route_required_but_unavailable"
+        let hasRoutableMetaPromptDevice =
+            AudioRouteDetector.isMetaOutputRouteActive() || AudioRouteDetector.metaBluetoothInputPort() != nil
+        if settings.recognitionAnnouncementsRequireMetaRoute && !hasRoutableMetaPromptDevice {
+            return "meta_prompt_route_required_but_unavailable"
         }
 
         if let lastPlayedAt = lastAnnouncementAtByPersonId[personId],

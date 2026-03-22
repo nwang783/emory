@@ -33,19 +33,31 @@ final class AudioRouteDetector {
 
     /// Check if any current audio route input/output is from Meta glasses.
     nonisolated static func isMetaAudioRouteActive() -> Bool {
-        let route = AVAudioSession.sharedInstance().currentRoute
-        let allPorts = route.inputs + route.outputs
-        return allPorts.contains { port in
-            let isBluetoothType = [
-                AVAudioSession.Port.bluetoothA2DP,
-                AVAudioSession.Port.bluetoothHFP,
-                AVAudioSession.Port.bluetoothLE
-            ].contains(port.portType)
+        isMetaInputRouteActive() || isMetaOutputRouteActive()
+    }
 
-            let name = port.portName.lowercased()
-            let isMetaDevice = name.contains("ray-ban") || name.contains("meta")
+    nonisolated static func isMetaInputRouteActive() -> Bool {
+        AVAudioSession.sharedInstance().currentRoute.inputs.contains(where: isMetaBluetoothPort)
+    }
 
-            return isBluetoothType && isMetaDevice
-        }
+    nonisolated static func isMetaOutputRouteActive() -> Bool {
+        AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: isMetaBluetoothPort)
+    }
+
+    nonisolated static func metaBluetoothInputPort() -> AVAudioSessionPortDescription? {
+        AVAudioSession.sharedInstance().availableInputs?.first(where: isMetaBluetoothPort)
+    }
+
+    nonisolated private static func isMetaBluetoothPort(_ port: AVAudioSessionPortDescription) -> Bool {
+        let isBluetoothType = [
+            AVAudioSession.Port.bluetoothA2DP,
+            AVAudioSession.Port.bluetoothHFP,
+            AVAudioSession.Port.bluetoothLE
+        ].contains(port.portType)
+
+        let name = port.portName.lowercased()
+        let isMetaDevice = name.contains("ray-ban") || name.contains("meta")
+
+        return isBluetoothType && isMetaDevice
     }
 }

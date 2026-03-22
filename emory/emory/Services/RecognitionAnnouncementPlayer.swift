@@ -51,9 +51,23 @@ final class RecognitionAnnouncementPlayer {
             options: session.categoryOptions,
             shouldReactivate: MicrophoneCaptureService.shared.isCapturing
         )
-        try session.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetoothA2DP])
+        try session.setCategory(
+            .playAndRecord,
+            mode: .voicePrompt,
+            options: [
+                .allowBluetoothA2DP,
+                .allowBluetoothHFP,
+                .duckOthers,
+                .interruptSpokenAudioAndMixWithOthers,
+            ]
+        )
         try session.setActive(true)
         logAudioSession("after-playback-config", session: session)
+
+        if !AudioRouteDetector.isMetaOutputRouteActive() {
+            routeAnnouncementToMetaHfpIfAvailable(session)
+            logAudioSession("after-meta-hfp-route-attempt", session: session)
+        }
 
         let player = try AVAudioPlayer(data: data)
         player.prepareToPlay()
@@ -111,6 +125,23 @@ final class RecognitionAnnouncementPlayer {
         }
     }
 
+    private func routeAnnouncementToMetaHfpIfAvailable(_ session: AVAudioSession) {
+        guard let metaInput = AudioRouteDetector.metaBluetoothInputPort() else {
+            print("[RecognitionAnnouncement] No Meta Bluetooth input available for HFP routing")
+            return
+        }
+
+        do {
+            try session.setPreferredInput(metaInput)
+            print(
+                "[RecognitionAnnouncement] Selected Meta Bluetooth input for prompt routing " +
+                "portType=\(metaInput.portType.rawValue) name=\(metaInput.portName)"
+            )
+        } catch {
+            print("[RecognitionAnnouncement] Failed to select Meta Bluetooth input: \(error.localizedDescription)")
+        }
+    }
+
     private func logAudioSession(_ label: String, session: AVAudioSession) {
         let inputs = session.currentRoute.inputs
             .map { "\($0.portType.rawValue):\($0.portName)" }
@@ -131,7 +162,7 @@ final class RecognitionAnnouncementPlayer {
             "[RecognitionAnnouncement] Session \(label) " +
             "category=\(session.category.rawValue) mode=\(session.mode.rawValue) " +
             "preferredInput=\(preferredInput) metaRoute=\(AudioRouteDetector.isMetaAudioRouteActive()) " +
-            "metaOutput=\(hasMetaOutput) inputs=[\(inputs)] outputs=[\(outputs)] " +
+            "metaInput=\(AudioRouteDetector.isMetaInputRouteActive()) metaOutput=\(hasMetaOutput) inputs=[\(inputs)] outputs=[\(outputs)] " +
             "availableInputs=[\(availableInputs)]"
         )
     }
