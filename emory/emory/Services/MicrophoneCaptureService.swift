@@ -53,16 +53,29 @@ final class MicrophoneCaptureService {
         guard !isCapturing else { return }
 
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [
+
+        // voiceChat mode enables AGC + echo cancellation + noise suppression
+        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [
             .defaultToSpeaker,
-            .allowBluetooth
+            .allowBluetooth,
+            .allowBluetoothA2DP
         ])
         try session.setActive(true)
+
+        // Try to select Bluetooth input (glasses mic) if available
+        if let bluetoothInput = session.availableInputs?.first(where: {
+            $0.portType == .bluetoothHFP || $0.portType == .bluetoothA2DP || $0.portType == .bluetoothLE
+        }) {
+            try session.setPreferredInput(bluetoothInput)
+            print("[Mic] Using Bluetooth input: \(bluetoothInput.portName)")
+        } else {
+            print("[Mic] No Bluetooth input found, using built-in mic")
+        }
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
-        print("[Mic] Starting capture: \(format.sampleRate)Hz, \(format.channelCount)ch")
+        print("[Mic] Starting capture: \(format.sampleRate)Hz, \(format.channelCount)ch, input: \(session.currentRoute.inputs.first?.portName ?? "unknown")")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self = self else { return }
@@ -88,6 +101,26 @@ final class MicrophoneCaptureService {
         audioEngine.prepare()
         try audioEngine.start()
         isCapturing = true
+
+        // Monitor audio route changes — restart engine if route switches
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self, self.isCapturing else { return }
+            let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
+                .flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
+            let currentInput = AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? "none"
+            print("[Mic] Route changed: reason=\(reason?.rawValue ?? 99), input=\(currentInput)")
+
+            // Restart engine to pick up new route
+            if !self.audioEngine.isRunning {
+                print("[Mic] Engine stopped after route change, restarting...")
+                try? self.audioEngine.start()
+            }
+        }
+
         print("[Mic] Capture started")
     }
 
@@ -96,6 +129,7 @@ final class MicrophoneCaptureService {
     func stop() {
         guard isCapturing else { return }
 
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 

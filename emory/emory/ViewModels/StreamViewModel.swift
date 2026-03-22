@@ -338,40 +338,21 @@ final class StreamViewModel {
         log("Bridge disconnected")
     }
 
-    /// `ws://host:port/ingest?role=publisher` from Settings **http(s)://** base URL (same as Desktop API / Test Connection).
-    private static func webSocketIngestURL(fromBackendHTTP raw: String) -> String? {
-        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
-              let host = url.host,
-              !host.isEmpty,
-              scheme == "http" || scheme == "https"
-        else { return nil }
-        let wsScheme = scheme == "https" ? "wss" : "ws"
-        let port = url.port ?? 18_763
-        return "\(wsScheme)://\(host):\(port)/ingest?role=publisher"
-    }
-
     private func connectBridgeIfConfigured() {
-        let raw = AppSettings.shared.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return }
+        var url = AppSettings.shared.backendURL
+        guard !url.isEmpty else { return }
 
-        let wsURL: String?
-        if raw.hasPrefix("ws://") || raw.hasPrefix("wss://") {
-            wsURL = raw
-        } else if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
-            wsURL = Self.webSocketIngestURL(fromBackendHTTP: raw)
-        } else {
-            wsURL = nil
+        // Auto-convert http:// to ws://
+        if url.hasPrefix("http://") {
+            url = "ws://" + url.dropFirst("http://".count)
+        } else if url.hasPrefix("https://") {
+            url = "wss://" + url.dropFirst("https://".count)
         }
 
-        guard let ws = wsURL else {
-            log("Bridge: no WebSocket URL (set http://… or ws://… in Settings)", level: .warning)
-            return
+        if url.hasPrefix("ws://") || url.hasPrefix("wss://") {
+            log("Bridge: connecting \(url)")
+            connectBridge(url: url)
         }
-        log("Bridge: connecting \(ws)")
-        connectBridge(url: ws)
     }
 
     private func subscribeToBridge() {
