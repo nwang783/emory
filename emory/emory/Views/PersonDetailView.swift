@@ -17,225 +17,206 @@ struct PersonDetailView: View {
     @State private var recentEncounters: [EncounterSummary] = []
     @State private var isLoading = false
     @State private var loadError: String?
+    @State private var headerVisible = false
+    @State private var cardsVisible = false
+
+    private var resolvedPerson: Person { detailPerson ?? person }
+    private var relationshipColor: Color { EmoryTheme.relationshipColor(for: resolvedPerson.relationship) }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if let photoAsset = resolvedPerson.photoName,
-                   UIImage(named: photoAsset) != nil {
-                    Image(photoAsset)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 320)
-                        .clipped()
-                } else {
-                    ZStack {
-                        Rectangle()
-                            .fill(EmoryTheme.primary.opacity(0.08))
-                            .frame(height: 320)
-                        FaceThumbnailView(
-                            faceThumbnail: resolvedPerson.faceThumbnail,
-                            fallbackSystemImage: "person.circle.fill",
-                            size: 132
-                        )
+                // MARK: Hero header
+                heroHeader
+
+                // MARK: Content cards
+                VStack(spacing: 16) {
+                    if isLoading && !settings.isMockMode {
+                        ProgressView("Loading details…")
+                            .padding(.vertical, 20)
+                    } else if let loadError, !settings.isMockMode {
+                        errorBanner(loadError)
                     }
-                }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(resolvedPerson.name)
-                        .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
-                        .foregroundStyle(EmoryTheme.textPrimary)
-                    Text(resolvedPerson.relationship)
-                        .font(.system(size: settings.fontSize.bodySize))
-                        .foregroundStyle(EmoryTheme.primary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 24)
-
-                if isLoading && !settings.isMockMode {
-                    ProgressView("Loading details...")
-                        .padding(.bottom, 24)
-                } else if let loadError, !settings.isMockMode {
-                    contentSection(title: "Connection") {
-                        Text(loadError)
-                            .font(.system(size: settings.fontSize.captionSize))
-                            .foregroundStyle(EmoryTheme.textSecondary)
-                    }
-                }
-
-                contentSection(title: "Key Facts") {
-                    if resolvedPerson.keyFacts.isEmpty {
-                        illustratedEmptyState(
-                            icon: "sparkles",
-                            message: "No key facts yet",
-                            hint: "Important details about \(resolvedPerson.name) will appear here."
-                        )
-                    } else {
-                        ForEach(resolvedPerson.keyFacts, id: \.self) { fact in
-                            detailRow(icon: "sparkles", color: EmoryTheme.secondary, title: fact)
-                        }
-                    }
-                }
-
-                contentSection(title: "Important Dates") {
-                    if resolvedPerson.importantDates.isEmpty {
-                        illustratedEmptyState(
-                            icon: "calendar.badge.clock",
-                            message: "No important dates saved",
-                            hint: "Birthdays, anniversaries, and special days go here."
-                        )
-                    } else {
-                        ForEach(resolvedPerson.importantDates, id: \.label) { date in
-                            detailRow(icon: "calendar", color: EmoryTheme.primary, title: date.label, subtitle: date.date)
-                        }
-                    }
-                }
-
-                contentSection(title: "Recent Topics") {
-                    if resolvedPerson.lastTopics.isEmpty {
-                        illustratedEmptyState(
-                            icon: "bubble.left.and.bubble.right",
-                            message: "No recent topics yet",
-                            hint: "Topics from conversations will appear here."
-                        )
-                    } else {
-                        ForEach(resolvedPerson.lastTopics, id: \.self) { topic in
-                            detailRow(icon: "bubble.left.and.bubble.right", color: EmoryTheme.primary, title: topic)
-                        }
-                    }
-                }
-
-                if !resolvedPerson.conversationStarters.isEmpty {
-                    contentSection(title: "Conversation Starters") {
-                        FlowLayout(spacing: 8) {
-                            ForEach(resolvedPerson.conversationStarters, id: \.self) { starter in
-                                HStack(spacing: 6) {
-                                    Image(systemName: "text.bubble")
-                                        .font(.system(size: 13))
-                                    Text(starter)
-                                        .font(.system(size: settings.fontSize.captionSize))
+                    // Key facts card
+                    profileCard(icon: "sparkles", color: EmoryTheme.secondary, title: "Key Facts") {
+                        if resolvedPerson.keyFacts.isEmpty {
+                            emptyHint(icon: "sparkles", text: "Important details about \(resolvedPerson.name) will appear here.")
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(resolvedPerson.keyFacts, id: \.self) { fact in
+                                    factRow(fact, color: EmoryTheme.secondary)
                                 }
-                                .foregroundStyle(EmoryTheme.primary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(EmoryTheme.primary.opacity(0.08))
-                                .clipShape(Capsule())
                             }
                         }
-                        .padding(.horizontal, 24)
                     }
-                }
 
-                contentSection(title: "Recent Memories") {
-                    if recentMemories.isEmpty {
-                        illustratedEmptyState(
-                            icon: "brain.head.profile",
-                            message: "No memories yet",
-                            hint: "Extracted conversation memories will show up here."
-                        )
-                    } else {
-                        ForEach(recentMemories) { memory in
-                            detailRow(
-                                icon: iconForMemoryType(memory.memoryType),
-                                color: noteColor(for: iconForMemoryType(memory.memoryType)),
-                                title: memory.memoryText,
-                                subtitle: memory.memoryDate
-                            )
-                        }
-                    }
-                }
-
-                contentSection(title: "Recent Encounters") {
-                    if recentEncounters.isEmpty {
-                        illustratedEmptyState(
-                            icon: "person.wave.2",
-                            message: "No recent encounters",
-                            hint: "When \(resolvedPerson.name) is recognized, encounters will appear here."
-                        )
-                    } else {
-                        ForEach(recentEncounters) { encounter in
-                            detailRow(
-                                icon: encounter.isImportant ? "star.fill" : "clock",
-                                color: encounter.isImportant ? EmoryTheme.secondary : EmoryTheme.primary,
-                                title: encounter.personName,
-                                subtitle: encounter.startedAt
-                            )
-                        }
-                    }
-                }
-
-                if let notes = resolvedPerson.notes, !notes.isEmpty {
-                    contentSection(title: "Notes") {
-                        Text(notes)
-                            .font(.system(size: settings.fontSize.bodySize))
-                            .foregroundStyle(EmoryTheme.textPrimary)
-                            .padding(.horizontal, 24)
-                    }
-                }
-
-                VStack(spacing: 12) {
-                    if settings.isMockMode {
-                        Button {
-                            showAddNote = true
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 18))
-                                Text("Add Note")
-                                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                    // Important dates card
+                    profileCard(icon: "calendar", color: EmoryTheme.warmAccent, title: "Important Dates") {
+                        if resolvedPerson.importantDates.isEmpty {
+                            emptyHint(icon: "calendar.badge.clock", text: "Birthdays, anniversaries, and special days go here.")
+                        } else {
+                            VStack(spacing: 10) {
+                                ForEach(resolvedPerson.importantDates, id: \.label) { date in
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(date.label)
+                                                .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                                                .foregroundStyle(EmoryTheme.textPrimary)
+                                            Text(date.date)
+                                                .font(.system(size: settings.fontSize.captionSize))
+                                                .foregroundStyle(EmoryTheme.textSecondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "calendar")
+                                            .foregroundStyle(EmoryTheme.warmAccent.opacity(0.5))
+                                    }
+                                }
                             }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(EmoryTheme.secondary)
-                            .clipShape(Capsule())
                         }
                     }
 
-                    Button {
-                        Haptics.medium()
-                        showEnrollConfirmation = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "faceid")
-                                .font(.system(size: 18))
-                            Text("Enroll Face")
-                                .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(EmoryTheme.primary)
-                        .clipShape(Capsule())
-                    }
-
-                    if settings.isMockMode {
-                        Button {
-                            showRemoveConfirmation = true
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "person.badge.minus")
-                                    .font(.system(size: 18))
-                                Text("Remove Person")
-                                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                    // Recent topics card
+                    profileCard(icon: "bubble.left.and.bubble.right", color: EmoryTheme.primary, title: "Recent Topics") {
+                        if resolvedPerson.lastTopics.isEmpty {
+                            emptyHint(icon: "bubble.left.and.bubble.right", text: "Topics from conversations will appear here.")
+                        } else {
+                            FlowLayout(spacing: 8) {
+                                ForEach(resolvedPerson.lastTopics, id: \.self) { topic in
+                                    Text(topic)
+                                        .font(.system(size: settings.fontSize.captionSize))
+                                        .foregroundStyle(EmoryTheme.primary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(EmoryTheme.primary.opacity(0.08))
+                                        .clipShape(Capsule())
+                                }
                             }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(EmoryTheme.destructive.opacity(0.75))
-                            .clipShape(Capsule())
                         }
-                    } else {
-                        Text("This mobile view is currently read-only.")
-                            .font(.system(size: settings.fontSize.captionSize))
-                            .foregroundStyle(EmoryTheme.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    // Conversation starters card
+                    if !resolvedPerson.conversationStarters.isEmpty {
+                        profileCard(icon: "text.bubble", color: EmoryTheme.tertiary, title: "Try Saying") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(resolvedPerson.conversationStarters, id: \.self) { starter in
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Image(systemName: "quote.opening")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(EmoryTheme.tertiary.opacity(0.6))
+                                            .padding(.top, 3)
+                                        Text(starter)
+                                            .font(.system(size: settings.fontSize.bodySize))
+                                            .foregroundStyle(EmoryTheme.textPrimary)
+                                            .italic()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Recent memories card
+                    profileCard(icon: "brain.head.profile", color: EmoryTheme.secondary, title: "Recent Memories") {
+                        if recentMemories.isEmpty {
+                            emptyHint(icon: "brain.head.profile", text: "Extracted conversation memories will show up here.")
+                        } else {
+                            VStack(spacing: 12) {
+                                ForEach(recentMemories) { memory in
+                                    HStack(alignment: .top, spacing: 12) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(memoryColor(for: memory.memoryType).opacity(0.12))
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: iconForMemoryType(memory.memoryType))
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(memoryColor(for: memory.memoryType))
+                                        }
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(memory.memoryText)
+                                                .font(.system(size: settings.fontSize.captionSize, weight: .medium))
+                                                .foregroundStyle(EmoryTheme.textPrimary)
+                                            Text(memory.memoryDate)
+                                                .font(.system(size: settings.fontSize.captionSize - 2))
+                                                .foregroundStyle(EmoryTheme.textSecondary)
+                                        }
+                                        Spacer()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Recent encounters card
+                    profileCard(icon: "person.wave.2", color: EmoryTheme.primary, title: "Recent Encounters") {
+                        if recentEncounters.isEmpty {
+                            emptyHint(icon: "person.wave.2", text: "When \(resolvedPerson.name) is recognized, encounters will appear here.")
+                        } else {
+                            VStack(spacing: 10) {
+                                ForEach(recentEncounters) { encounter in
+                                    HStack(spacing: 12) {
+                                        Circle()
+                                            .fill(encounter.isImportant ? EmoryTheme.secondary : EmoryTheme.primary.opacity(0.15))
+                                            .frame(width: 8, height: 8)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(encounter.personName)
+                                                .font(.system(size: settings.fontSize.captionSize, weight: .medium))
+                                                .foregroundStyle(EmoryTheme.textPrimary)
+                                            Text(encounter.startedAt)
+                                                .font(.system(size: settings.fontSize.captionSize - 2))
+                                                .foregroundStyle(EmoryTheme.textSecondary)
+                                        }
+                                        Spacer()
+                                        if encounter.isImportant {
+                                            Image(systemName: "star.fill")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(EmoryTheme.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Notes card
+                    if let notes = resolvedPerson.notes, !notes.isEmpty {
+                        profileCard(icon: "note.text", color: EmoryTheme.primary, title: "Notes") {
+                            Text(notes)
+                                .font(.system(size: settings.fontSize.bodySize))
+                                .foregroundStyle(EmoryTheme.textPrimary)
+                        }
+                    }
+
+                    // Action buttons
+                    VStack(spacing: 12) {
+                        if settings.isMockMode {
+                            actionButton(icon: "plus.circle.fill", label: "Add Note", color: EmoryTheme.secondary) {
+                                showAddNote = true
+                            }
+                        }
+
+                        actionButton(icon: "faceid", label: "Enroll Face", color: EmoryTheme.primary) {
+                            Haptics.medium()
+                            showEnrollConfirmation = true
+                        }
+
+                        if settings.isMockMode {
+                            actionButton(icon: "person.badge.minus", label: "Remove Person", color: EmoryTheme.destructive.opacity(0.75)) {
+                                showRemoveConfirmation = true
+                            }
+                        } else {
+                            Text("This mobile view is currently read-only.")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(.top, 4)
                 }
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
                 .padding(.bottom, 40)
+                .opacity(cardsVisible ? 1 : 0)
+                .offset(y: cardsVisible ? 0 : 20)
             }
         }
         .background(EmoryTheme.background.ignoresSafeArea())
@@ -243,6 +224,8 @@ struct PersonDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             InactivityManager.shared.setLastViewedPerson(person)
+            withAnimation(.easeOut(duration: 0.4)) { headerVisible = true }
+            withAnimation(.easeOut(duration: 0.5).delay(0.15)) { cardsVisible = true }
         }
         .confirmationDialog(
             "Are you sure you want to remove \(resolvedPerson.name)?",
@@ -278,81 +261,188 @@ struct PersonDetailView: View {
         }
     }
 
-    private func noteColor(for icon: String) -> Color {
-        if icon.contains("map") || icon.contains("house") { return EmoryTheme.primary }
-        if icon.contains("person") { return EmoryTheme.secondary }
-        if icon.contains("gift") || icon.contains("heart") { return EmoryTheme.destructive }
-        if icon.contains("phone") || icon.contains("clock") { return EmoryTheme.primary }
-        return EmoryTheme.secondary
+    // MARK: - Hero header
+
+    private var heroHeader: some View {
+        ZStack(alignment: .bottomLeading) {
+            // Background gradient using relationship color
+            LinearGradient(
+                colors: [relationshipColor.opacity(0.18), relationshipColor.opacity(0.04), EmoryTheme.background],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 280)
+
+            // Decorative circles
+            Circle()
+                .fill(relationshipColor.opacity(0.06))
+                .frame(width: 200, height: 200)
+                .offset(x: 160, y: -60)
+
+            Circle()
+                .fill(relationshipColor.opacity(0.04))
+                .frame(width: 120, height: 120)
+                .offset(x: -30, y: -100)
+
+            HStack(alignment: .bottom, spacing: 20) {
+                // Face thumbnail
+                ZStack {
+                    Circle()
+                        .fill(EmoryTheme.cardBackground)
+                        .frame(width: 108, height: 108)
+                        .shadow(color: relationshipColor.opacity(0.2), radius: 16, y: 6)
+
+                    if let photoAsset = resolvedPerson.photoName,
+                       UIImage(named: photoAsset) != nil {
+                        Image(photoAsset)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 100, height: 100)
+                            .clipShape(Circle())
+                    } else {
+                        FaceThumbnailView(
+                            faceThumbnail: resolvedPerson.faceThumbnail,
+                            fallbackSystemImage: "person.circle.fill",
+                            size: 100
+                        )
+                    }
+
+                    // Colored ring
+                    Circle()
+                        .stroke(relationshipColor.opacity(0.35), lineWidth: 3)
+                        .frame(width: 106, height: 106)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(resolvedPerson.name)
+                        .font(.system(size: settings.fontSize.headlineSize, weight: .bold))
+                        .foregroundStyle(EmoryTheme.textPrimary)
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(relationshipColor)
+                            .frame(width: 8, height: 8)
+                        Text(resolvedPerson.relationship)
+                            .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                            .foregroundStyle(relationshipColor)
+                    }
+
+                    if let lastSeen = resolvedPerson.lastSeen, !lastSeen.isEmpty {
+                        Text("Last seen \(lastSeen)")
+                            .font(.system(size: settings.fontSize.captionSize))
+                            .foregroundStyle(EmoryTheme.textSecondary)
+                            .padding(.top, 2)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 20)
+        }
+        .clipped()
+        .opacity(headerVisible ? 1 : 0)
+        .offset(y: headerVisible ? 0 : -10)
     }
 
-    private var resolvedPerson: Person {
-        detailPerson ?? person
-    }
+    // MARK: - Card components
 
     @ViewBuilder
-    private func contentSection(title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.system(size: settings.fontSize.titleSize, weight: .semibold))
-                .foregroundStyle(EmoryTheme.textPrimary)
-                .padding(.horizontal, 24)
-
-            VStack(alignment: .leading, spacing: 12) {
-                content()
+    private func profileCard<Content: View>(
+        icon: String,
+        color: Color,
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(color)
+                }
+                Text(title)
+                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+                    .foregroundStyle(EmoryTheme.textPrimary)
+                Spacer()
             }
+
+            content()
         }
-        .padding(.bottom, 24)
+        .padding(18)
+        .emoryCard()
     }
 
-    private func detailRow(icon: String, color: Color, title: String, subtitle: String? = nil) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.15))
-                    .frame(width: 40, height: 40)
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(color)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: settings.fontSize.bodySize, weight: .medium))
-                    .foregroundStyle(EmoryTheme.textPrimary)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: settings.fontSize.captionSize))
-                        .foregroundStyle(EmoryTheme.textSecondary)
-                }
-            }
-
+    private func factRow(_ text: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(color.opacity(0.4))
+                .frame(width: 6, height: 6)
+                .padding(.top, 7)
+            Text(text)
+                .font(.system(size: settings.fontSize.bodySize))
+                .foregroundStyle(EmoryTheme.textPrimary)
             Spacer()
         }
-        .padding(.horizontal, 24)
     }
 
-    private func illustratedEmptyState(icon: String, message: String, hint: String) -> some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(EmoryTheme.primary.opacity(0.06))
-                    .frame(width: 52, height: 52)
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                    .foregroundStyle(EmoryTheme.primary.opacity(0.4))
-            }
-            Text(message)
-                .font(.system(size: settings.fontSize.captionSize, weight: .medium))
+    private func emptyHint(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(EmoryTheme.primary.opacity(0.3))
+            Text(text)
+                .font(.system(size: settings.fontSize.captionSize))
                 .foregroundStyle(EmoryTheme.textSecondary)
-            Text(hint)
-                .font(.system(size: settings.fontSize.captionSize - 2))
-                .foregroundStyle(EmoryTheme.textSecondary.opacity(0.7))
-                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(EmoryTheme.warmAccent)
+            Text(message)
+                .font(.system(size: settings.fontSize.captionSize))
+                .foregroundStyle(EmoryTheme.textSecondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EmoryTheme.warmAccent.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func actionButton(icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                Text(label)
+                    .font(.system(size: settings.fontSize.bodySize, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(color)
+            .clipShape(Capsule())
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func memoryColor(for memoryType: String) -> Color {
+        switch memoryType {
+        case "event": return EmoryTheme.primary
+        case "preference": return EmoryTheme.destructive
+        case "relationship": return EmoryTheme.secondary
+        case "health": return EmoryTheme.warmAccent
+        case "routine": return EmoryTheme.primary
+        default: return EmoryTheme.secondary
+        }
     }
 
     private func iconForMemoryType(_ memoryType: String) -> String {

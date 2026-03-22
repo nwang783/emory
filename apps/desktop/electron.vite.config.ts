@@ -5,6 +5,12 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
+    resolve: {
+      alias: {
+        '@emory/bridge-live': resolve('../../packages/bridge-live/src/index.ts'),
+        '@emory/ingest-protocol': resolve('../../packages/ingest-protocol/src/index.ts'),
+      },
+    },
     plugins: [
       externalizeDepsPlugin({
         // Bundle dotenv: when it stays external, Node resolves from `out/main/` and often
@@ -19,6 +25,12 @@ export default defineConfig({
     },
   },
   preload: {
+    resolve: {
+      alias: {
+        '@emory/bridge-live': resolve('../../packages/bridge-live/src/index.ts'),
+        '@emory/ingest-protocol': resolve('../../packages/ingest-protocol/src/index.ts'),
+      },
+    },
     plugins: [
       externalizeDepsPlugin({
         exclude: ['@emory/core', '@emory/db'],
@@ -37,6 +49,7 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve('src/renderer'),
+        '@emory/bridge-live': resolve('../../packages/bridge-live/src/index.ts'),
         '@emory/ingest-protocol': resolve('../../packages/ingest-protocol/src/index.ts'),
       },
     },

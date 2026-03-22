@@ -71,6 +71,25 @@ struct DesktopApiClient {
         try await get("api/v1/home")
     }
 
+    func signalingWebSocketURL(health: DesktopHealthResponse, role: String) throws -> URL {
+        guard let host = baseURL.host, !host.isEmpty else {
+            throw DesktopApiError.invalidBaseURL
+        }
+
+        var components = URLComponents()
+        components.scheme = baseURL.scheme?.lowercased() == "https" ? "wss" : "ws"
+        components.host = host
+        components.port = health.signalingPort
+        components.path = (health.wsSignalingPath?.isEmpty == false ? health.wsSignalingPath! : "/signaling")
+        components.queryItems = [URLQueryItem(name: "role", value: role)]
+
+        guard let url = components.url else {
+            throw DesktopApiError.invalidBaseURL
+        }
+
+        return url
+    }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let url = baseURL.appending(path: path)
         let (data, response) = try await session.data(from: url)

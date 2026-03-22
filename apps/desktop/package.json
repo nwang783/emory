@@ -10,6 +10,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test:camera-codecs": "bun test src/renderer/modules/camera/lib/orderVideoCodecsForIngest.test.ts",
+    "test:person-focus": "bun test src/main/services/person-focus.service.test.ts",
     "manual:process-recording": "vite-node scripts/process-manual-recording.ts",
     "manual:query-memory": "vite-node scripts/query-manual-memory.ts",
     "postinstall": "node ../../scripts/rebuild-electron-native.cjs"
