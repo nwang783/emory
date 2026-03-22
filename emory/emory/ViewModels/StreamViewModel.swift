@@ -110,10 +110,11 @@ final class StreamViewModel {
                 self.log("Session started successfully")
                 self.bridgeService.sendSessionStart()
 
-                // Start mic capture alongside glasses video — route depends on user setting
+                // Start mic capture alongside glasses video
+                // Skip audio session config — the glasses SDK already configured it
                 let audioSrc = AppSettings.shared.audioSource
                 do {
-                    try self.micService.start(audioSource: audioSrc)
+                    try self.micService.start(audioSource: audioSrc, skipSessionConfig: true)
                     self.isMicCapturing = true
                     self.log("Microphone capture started (source: \(audioSrc.rawValue))")
                 } catch {
@@ -132,9 +133,9 @@ final class StreamViewModel {
 
         ConversationCaptureCoordinator.shared.finishActiveConversation(reason: "session_stopped")
 
-        // Stop mic capture
+        // Stop mic capture — don't deactivate audio session, glasses still need it
         bridgeService.sendSessionEnd()
-        micService.stop()
+        micService.stop(deactivateSession: false)
         isMicCapturing = false
         audioLevel = 0.0
         log("Microphone capture stopped")

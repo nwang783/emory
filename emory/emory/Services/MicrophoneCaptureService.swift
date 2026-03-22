@@ -61,18 +61,21 @@ final class MicrophoneCaptureService {
 
     // MARK: - Start Capture
 
-    func start(audioSource: AudioSource = .iphone) throws {
+    func start(audioSource: AudioSource = .iphone, skipSessionConfig: Bool = false) throws {
         guard !isCapturing else { return }
 
         let session = AVAudioSession.sharedInstance()
 
-        // voiceChat mode enables AGC + echo cancellation + noise suppression
-        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [
-            .defaultToSpeaker,
-            .allowBluetooth,
-            .allowBluetoothA2DP
-        ])
-        try session.setActive(true)
+        if !skipSessionConfig {
+            // voiceChat mode enables AGC + echo cancellation + noise suppression
+            // Skip this when glasses are streaming — the SDK already configured the session
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [
+                .defaultToSpeaker,
+                .allowBluetooth,
+                .allowBluetoothA2DP
+            ])
+            try session.setActive(true)
+        }
 
         Self.selectPreferredInput(source: audioSource)
 
@@ -131,14 +134,17 @@ final class MicrophoneCaptureService {
 
     // MARK: - Stop Capture
 
-    func stop() {
+    func stop(deactivateSession: Bool = true) {
         guard isCapturing else { return }
 
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Don't deactivate audio session if glasses are still streaming
+        if deactivateSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
 
         isCapturing = false
         bufferQueue.sync { recentBuffers.removeAll() }
