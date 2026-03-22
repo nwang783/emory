@@ -4,7 +4,7 @@ import { hasIdentityPresent, pickPrimarySubject, type IdentityTrack } from '../l
 export type ConversationRecorderPhase = 'idle' | 'arming' | 'recording'
 
 export const CAMERA_CONVERSATION_START_DEBOUNCE_MS = 400
-export const CAMERA_CONVERSATION_STOP_DEBOUNCE_MS = 2000
+export const CAMERA_CONVERSATION_STOP_DEBOUNCE_MS = 4000
 
 const TICK_MS = 100
 /** Let MediaRecorder `onstop` flush before tearing down the mic stream (effect cleanup order). */
