@@ -1,5 +1,9 @@
 # Emory
 
+<p align="center">
+  <img src="docs/assets/hero.png" alt="Emory" width="100%" />
+</p>
+
 Emory is a memory assistant for people living with dementia. The goal is simple: when someone familiar comes into view, Emory helps the wearer remember who they are, why they matter, and what they talked about before.
 
 For the hackathon, we are building a local-first pipeline that connects **Ray-Ban Meta smart glasses**, an **iPhone companion app**, and an **Electron desktop app**. The desktop app identifies known faces, captures conversation context, turns that conversation into structured memories, and stores those memories so the user can get helpful reminders in future interactions.
