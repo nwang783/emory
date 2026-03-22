@@ -64,6 +64,7 @@ export function useRemoteIngestViewer({
   const binaryMessagesRef = useRef(0)
   const nonVideoBinaryRef = useRef(0)
   const framesDecodedRef = useRef(0)
+  const framesDroppedRef = useRef(0)
   const parseFailuresRef = useRef(0)
   const pingSeqRef = useRef(0)
   const outstandingPingSeqRef = useRef<number | null>(null)
@@ -71,6 +72,12 @@ export function useRemoteIngestViewer({
   const awaitingRelaySeqRef = useRef<number | null>(null)
   const relayDeadlineRef = useRef<number | null>(null)
   const startRef = useRef<() => Promise<void>>(async () => {})
+
+  // Newest-wins frame dropping: max one decode in flight at a time.
+  const decodingRef = useRef(false)
+  const pendingPayloadRef = useRef<Uint8Array | null>(null)
+  const canvasWidthRef = useRef(0)
+  const canvasHeightRef = useRef(0)
 
   const [phase, setPhase] = useState<RemoteIngestViewerPhase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -120,6 +127,8 @@ export function useRemoteIngestViewer({
     outstandingPingDeadlineRef.current = null
     awaitingRelaySeqRef.current = null
     relayDeadlineRef.current = null
+    decodingRef.current = false
+    pendingPayloadRef.current = null
     logRemoteIngest('jpeg_ws_stop', {})
   }, [closeSocket])
 
@@ -144,7 +153,10 @@ export function useRemoteIngestViewer({
     binaryMessagesRef.current = 0
     nonVideoBinaryRef.current = 0
     framesDecodedRef.current = 0
+    framesDroppedRef.current = 0
     parseFailuresRef.current = 0
+    decodingRef.current = false
+    pendingPayloadRef.current = null
     setError(null)
     setPhase('connecting')
 
@@ -233,38 +245,54 @@ export function useRemoteIngestViewer({
         return
       }
 
-      void (async (): Promise<void> => {
-        try {
-          binaryMessagesRef.current += 1
-          const ab =
-            ev.data instanceof ArrayBuffer ? ev.data : await (ev.data as Blob).arrayBuffer()
-          const u8 = new Uint8Array(ab)
-          const parsed = parseBinaryMessage(u8)
-          if (!parsed || parsed.messageType !== MSG_VIDEO_FRAME) {
-            nonVideoBinaryRef.current += 1
-            if (parsed) {
-              logRemoteIngest('jpeg_ws_binary_skip', {
-                messageType: parsed.messageType,
-                payloadBytes: parsed.payload.byteLength,
-              })
-            }
+      binaryMessagesRef.current += 1
+
+      const ab =
+        ev.data instanceof ArrayBuffer ? ev.data : null
+      if (!ab) return
+      const u8 = new Uint8Array(ab)
+      const parsed = parseBinaryMessage(u8)
+      if (!parsed || parsed.messageType !== MSG_VIDEO_FRAME) {
+        nonVideoBinaryRef.current += 1
+        return
+      }
+
+      const payload = parsed.payload
+
+      if (decodingRef.current) {
+        pendingPayloadRef.current = payload
+        framesDroppedRef.current += 1
+        return
+      }
+
+      const decodeAndDraw = (jpegPayload: Uint8Array): void => {
+        decodingRef.current = true
+        const blob = new Blob([jpegPayload], { type: 'image/jpeg' })
+        void createImageBitmap(blob).then((bmp) => {
+          if (decodeTokenRef.current !== token) {
+            bmp.close()
+            decodingRef.current = false
             return
           }
 
-          const blob = new Blob([parsed.payload], { type: 'image/jpeg' })
-          const bmp = await createImageBitmap(blob)
-
           const canvas = previewCanvasRef.current
           const ctx = canvas?.getContext('2d')
-          if (!canvas || !ctx || decodeTokenRef.current !== token) {
+          if (!canvas || !ctx) {
             bmp.close()
+            decodingRef.current = false
             return
           }
 
           const bw = bmp.width
           const bh = bmp.height
-          canvas.width = bw
-          canvas.height = bh
+          if (canvasWidthRef.current !== bw || canvasHeightRef.current !== bh) {
+            canvas.width = bw
+            canvas.height = bh
+            canvasWidthRef.current = bw
+            canvasHeightRef.current = bh
+            setFrameWidth(bw)
+            setFrameHeight(bh)
+          }
           ctx.drawImage(bmp, 0, 0)
           bmp.close()
 
@@ -272,21 +300,29 @@ export function useRemoteIngestViewer({
           if (framesDecodedRef.current === 1) {
             logRemoteIngest('jpeg_ws_first_frame', { w: bw, h: bh })
           }
-
-          setFrameWidth(bw)
-          setFrameHeight(bh)
           setPhase('streaming')
-        } catch (e) {
+
+          decodingRef.current = false
+          const next = pendingPayloadRef.current
+          if (next) {
+            pendingPayloadRef.current = null
+            decodeAndDraw(next)
+          }
+        }).catch((e) => {
+          decodingRef.current = false
           parseFailuresRef.current += 1
           logRemoteIngest('jpeg_ws_decode_error', {
             message: e instanceof Error ? e.message : String(e),
           })
-          if (decodeTokenRef.current === token) {
-            setError('Failed to decode remote video frame')
-            setPhase('error')
+          const next = pendingPayloadRef.current
+          if (next) {
+            pendingPayloadRef.current = null
+            decodeAndDraw(next)
           }
-        }
-      })()
+        })
+      }
+
+      decodeAndDraw(payload)
     }
   }, [armed, host, port, stop])
 
@@ -311,6 +347,7 @@ export function useRemoteIngestViewer({
         readyState: rs ?? null,
         readyStateLabel: readyStateLabel(rs),
         framesDecoded: framesDecodedRef.current,
+        framesDropped: framesDroppedRef.current,
         binaryMessages: binaryMessagesRef.current,
         nonVideoBinary: nonVideoBinaryRef.current,
         parseFailures: parseFailuresRef.current,

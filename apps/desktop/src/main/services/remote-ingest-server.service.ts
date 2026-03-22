@@ -76,22 +76,39 @@ canvas{max-width:100vw;max-height:90vh;border:1px solid #333;background:#000}
 <script>
 const canvas=document.getElementById('feed'),ctx=canvas.getContext('2d');
 const status=document.getElementById('status'),stats=document.getElementById('stats');
-let frames=0,bytes=0,startTime=Date.now(),ws;
+let frames=0,dropped=0,bytes=0,startTime=Date.now(),ws;
+let decoding=false,pending=null,cw=0,ch=0;
+
+function decodeAndDraw(payload){
+  decoding=true;
+  const blob=new Blob([payload],{type:'image/jpeg'});
+  createImageBitmap(blob).then(bmp=>{
+    if(cw!==bmp.width||ch!==bmp.height){cw=bmp.width;ch=bmp.height;canvas.width=cw;canvas.height=ch;}
+    ctx.drawImage(bmp,0,0);bmp.close();
+    frames++;bytes+=payload.byteLength;
+    const elapsed=(Date.now()-startTime)/1000;
+    const fps=Math.round(frames/elapsed);
+    status.textContent='Streaming ('+cw+'\\u00d7'+ch+') '+fps+' fps';
+    stats.textContent=frames+' drawn | '+dropped+' dropped | '+(bytes/1024/1024).toFixed(1)+' MB';
+    decoding=false;
+    if(pending){const p=pending;pending=null;decodeAndDraw(p);}
+  }).catch(()=>{decoding=false;if(pending){const p=pending;pending=null;decodeAndDraw(p);}});
+}
 
 function connect(){
-  status.textContent='Connecting…';
+  status.textContent='Connecting\\u2026';
   ws=new WebSocket('ws://'+location.host+'/ingest?role=viewer');
   ws.binaryType='arraybuffer';
 
-  ws.onopen=()=>{status.textContent='Connected — waiting for publisher…';};
-  ws.onclose=()=>{status.textContent='Disconnected — reconnecting in 2s…';setTimeout(connect,2000);};
+  ws.onopen=()=>{status.textContent='Connected \\u2014 waiting for publisher\\u2026';};
+  ws.onclose=()=>{status.textContent='Disconnected \\u2014 reconnecting in 2s\\u2026';setTimeout(connect,2000);};
   ws.onerror=()=>{};
 
   ws.onmessage=(ev)=>{
     if(typeof ev.data==='string'){
       try{const j=JSON.parse(ev.data);
         if(j.type==='ingest_pong'){
-          status.textContent=j.publisherPresent?'Publisher connected — waiting for frames…':'Connected — no publisher';
+          status.textContent=j.publisherPresent?'Publisher connected \\u2014 waiting for frames\\u2026':'Connected \\u2014 no publisher';
         }
       }catch{}
       return;
@@ -99,19 +116,11 @@ function connect(){
     const u8=new Uint8Array(ev.data);
     if(u8.length<8)return;
     const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
-    const msgType=dv.getUint32(0,true);
-    if(msgType!==1)return;
+    if(dv.getUint32(0,true)!==1)return;
     const metaLen=dv.getUint32(4,true);
     const payload=u8.subarray(8+metaLen);
-    const blob=new Blob([payload],{type:'image/jpeg'});
-    createImageBitmap(blob).then(bmp=>{
-      canvas.width=bmp.width;canvas.height=bmp.height;
-      ctx.drawImage(bmp,0,0);bmp.close();
-      frames++;bytes+=payload.byteLength;
-      const elapsed=(Date.now()-startTime)/1000;
-      status.textContent='Streaming ('+bmp.width+'×'+bmp.height+')';
-      stats.textContent=frames+' frames | '+Math.round(frames/elapsed)+' fps | '+(bytes/1024/1024).toFixed(1)+' MB';
-    }).catch(()=>{});
+    if(decoding){pending=payload;dropped++;return;}
+    decodeAndDraw(payload);
   };
 }
 connect();
