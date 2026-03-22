@@ -23,10 +23,14 @@ final class ConversationCaptureCoordinator {
     func handleFocusEvent(_ event: DesktopPersonFocusEvent) {
         print("[ConversationCapture] Focus event reason=\(event.reason) person=\(event.person?.name ?? "none") sequence=\(event.sequence)")
         if let person = event.person {
-            transitionToFocusedPerson(person)
+            beginConversationCapture(for: person)
         } else {
             finishActiveConversation(reason: event.reason)
         }
+    }
+
+    func beginConversationCapture(for person: DesktopRecognizedPerson) {
+        transitionToFocusedPerson(person)
     }
 
     func handleConnectionStatus(_ status: DesktopRecognitionSignalingService.ConnectionStatus) {

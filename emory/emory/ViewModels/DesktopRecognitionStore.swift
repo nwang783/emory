@@ -11,6 +11,9 @@ final class DesktopRecognitionStore {
         var detailPerson: Person?
         var recentMemories: [PersonMemory]
         var recentEncounters: [EncounterSummary]
+        var latestConversationSummary: String?
+        var latestConversationRecordedAt: String?
+        var isPlayingAnnouncement: Bool
         var isLoadingDetail: Bool
 
         var id: String { "\(person.id)-\(sequence)" }
@@ -27,7 +30,7 @@ final class DesktopRecognitionStore {
     var presentedRecognition: PresentedRecognition?
 
     private let signalingService = DesktopRecognitionSignalingService()
-    private let conversationCaptureCoordinator = ConversationCaptureCoordinator.shared
+    private let recognitionExperienceCoordinator = RecognitionExperienceCoordinator.shared
     private var eventTask: Task<Void, Never>?
     private var detailFetchTask: Task<Void, Never>?
     private var lastSequence = 0
@@ -50,6 +53,12 @@ final class DesktopRecognitionStore {
         signalingService.onStatusChange = { [weak self] status in
             Task { @MainActor in
                 self?.handleStatusChange(status)
+            }
+        }
+
+        recognitionExperienceCoordinator.onAnnouncementStateChange = { [weak self] personId, isPlaying in
+            Task { @MainActor in
+                self?.handleAnnouncementStateChange(personId: personId, isPlaying: isPlaying)
             }
         }
 
@@ -85,7 +94,7 @@ final class DesktopRecognitionStore {
     }
 
     private func handleStatusChange(_ status: DesktopRecognitionSignalingService.ConnectionStatus) {
-        conversationCaptureCoordinator.handleConnectionStatus(status)
+        recognitionExperienceCoordinator.handleConnectionStatus(status)
         switch status {
         case .disconnected:
             isConnected = false
@@ -109,7 +118,7 @@ final class DesktopRecognitionStore {
     private func handleFocusEvent(_ event: DesktopPersonFocusEvent) {
         guard event.sequence > lastSequence else { return }
         lastSequence = event.sequence
-        conversationCaptureCoordinator.handleFocusEvent(event)
+        recognitionExperienceCoordinator.handleFocusEvent(event)
 
         guard let recognizedPerson = event.person else { return }
 
@@ -126,6 +135,9 @@ final class DesktopRecognitionStore {
             detectedAt: Date(timeIntervalSince1970: event.ts),
             recentMemories: [],
             recentEncounters: [],
+            latestConversationSummary: nil,
+            latestConversationRecordedAt: nil,
+            isPlayingAnnouncement: false,
             isLoadingDetail: true
         )
 
@@ -143,11 +155,19 @@ final class DesktopRecognitionStore {
             presentedRecognition?.detailPerson = response.person.asPerson()
             presentedRecognition?.recentMemories = response.recentMemories.map { $0.asPersonMemory() }
             presentedRecognition?.recentEncounters = response.recentEncounters.map { $0.asEncounterSummary() }
+            presentedRecognition?.latestConversationSummary = response.latestConversationSummary
+            presentedRecognition?.latestConversationRecordedAt = response.latestConversationRecordedAt
             presentedRecognition?.isLoadingDetail = false
         } catch {
             guard !Task.isCancelled else { return }
             presentedRecognition?.isLoadingDetail = false
         }
+    }
+
+    private func handleAnnouncementStateChange(personId: String?, isPlaying: Bool) {
+        guard let presentation = presentedRecognition else { return }
+        guard personId == nil || presentation.person.id == personId else { return }
+        presentedRecognition?.isPlayingAnnouncement = isPlaying
     }
 
     private func makeDismissalSignature(personId: String, sequence: Int) -> String {

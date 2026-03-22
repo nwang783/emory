@@ -16,6 +16,7 @@ import { DeepgramService } from './services/deepgram.service.js'
 import { MemoryExtractionService } from './services/memory-extraction.service.js'
 import { ConversationProcessingService } from './services/conversation-processing.service.js'
 import { ConversationIngestService } from './services/conversation-ingest.service.js'
+import { ProfileKeyFactsService } from './services/profile-key-facts.service.js'
 import { MemoryQueryUnderstandingService } from './services/memory-query-understanding.service.js'
 import { MemoryAnswerService } from './services/memory-answer.service.js'
 import { MemoryQueryService } from './services/memory-query.service.js'
@@ -25,6 +26,8 @@ import { RemoteIngestServerService } from './services/remote-ingest-server.servi
 import { registerRemoteIngestIpc } from './ipc/remote-ingest.ipc.js'
 import { MobileApiService } from './services/mobile-api.service.js'
 import { getActiveSessionId } from './ipc/encounter.ipc.js'
+import { RecognitionContextService } from './services/recognition-context.service.js'
+import { RecognitionAnnouncementService } from './services/recognition-announcement.service.js'
 
 function getModelsDir(): string {
   return path.join(app.getPath('userData'), 'models')
@@ -147,6 +150,7 @@ app.whenReady().then(async () => {
   const deepgramService = new DeepgramService()
   const cartesiaTtsService = new CartesiaTtsService()
   const memoryExtractionService = new MemoryExtractionService()
+  const profileKeyFactsService = new ProfileKeyFactsService()
   const memoryQueryUnderstandingService = new MemoryQueryUnderstandingService()
   const memoryAnswerService = new MemoryAnswerService()
   const conversationProcessingService = new ConversationProcessingService(
@@ -154,7 +158,8 @@ app.whenReady().then(async () => {
     peopleRepo,
     relationshipRepo,
     deepgramService,
-      memoryExtractionService,
+    memoryExtractionService,
+    profileKeyFactsService,
   )
   const conversationIngestService = new ConversationIngestService(
     conversationProcessingService,
@@ -172,6 +177,16 @@ app.whenReady().then(async () => {
     memoryQueryUnderstandingService,
     memoryAnswerService,
   )
+  const recognitionContextService = new RecognitionContextService(
+    peopleRepo,
+    conversationRepo,
+    relationshipRepo,
+  )
+  const recognitionAnnouncementService = new RecognitionAnnouncementService(
+    recognitionContextService,
+    cartesiaTtsService,
+    path.join(getTtsRootDir(), 'recognitions'),
+  )
 
   const remoteIngestSettings = new RemoteIngestSettingsService(app.getPath('userData'))
   const mobileApiService = new MobileApiService(peopleRepo, encounterRepo, conversationRepo)
@@ -182,6 +197,7 @@ app.whenReady().then(async () => {
       getFaceService: getMainFaceService,
     },
     conversationIngestService,
+    recognitionAnnouncementService,
   )
   registerRemoteIngestIpc(remoteIngestSettings, remoteIngestServer)
   const remoteIngestPersisted = await remoteIngestSettings.load()

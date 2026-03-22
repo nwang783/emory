@@ -84,6 +84,19 @@ describe('PeopleRepository', () => {
     expect(updated!.importantDates).toEqual([{ label: 'Birthday', date: '2000-01-01' }])
   })
 
+  it('allows clearing auto-generated key facts', () => {
+    const person = repo.create({ name: 'Test' })
+    repo.updateProfile(person.id, {
+      keyFacts: ['Likes coffee'],
+    })
+
+    const updated = repo.updateProfile(person.id, {
+      keyFacts: [],
+    })
+
+    expect(updated!.keyFacts).toEqual([])
+  })
+
   it('merges two people', () => {
     const keep = repo.create({ name: 'Keep' })
     const merge = repo.create({ name: 'Merge' })
@@ -515,6 +528,46 @@ describe('ConversationRepository', () => {
     expect(memories[0].memoryText).toContain('physical therapy')
     expect(memories[0].recordingId).toBe(recording.id)
     expect(memories[0].relationshipId).toBeNull()
+  })
+
+  it('returns all memories for a person without a limit cap', () => {
+    const john = peopleRepo.create({ name: 'John' })
+    const jane = peopleRepo.create({ name: 'Jane' })
+    const recording = conversationRepo.createRecording({
+      personId: john.id,
+      recordedAt: '2026-03-21T15:00:00.000Z',
+      audioPath: '/tmp/test.wav',
+      mimeType: 'audio/wav',
+    })
+
+    conversationRepo.addMemories([
+      {
+        personId: john.id,
+        recordingId: recording.id,
+        memoryText: 'John likes baseball.',
+        memoryType: 'preference',
+        memoryDate: '2026-03-21T15:10:00.000Z',
+      },
+      {
+        personId: john.id,
+        recordingId: recording.id,
+        memoryText: 'John started physical therapy.',
+        memoryType: 'health',
+        memoryDate: '2026-03-22T15:10:00.000Z',
+      },
+      {
+        personId: jane.id,
+        recordingId: recording.id,
+        memoryText: 'Jane likes tea.',
+        memoryType: 'preference',
+        memoryDate: '2026-03-23T15:10:00.000Z',
+      },
+    ])
+
+    const memories = conversationRepo.getAllMemoriesByPerson(john.id)
+    expect(memories).toHaveLength(2)
+    expect(memories[0].memoryText).toContain('physical therapy')
+    expect(memories[1].memoryText).toContain('baseball')
   })
 
   it('upserts graph relationship memory by relationship_id', () => {

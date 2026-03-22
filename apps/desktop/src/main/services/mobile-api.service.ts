@@ -16,6 +16,7 @@ import type {
   MobileApiPersonDetail,
   MobileApiRecentEncountersResponse,
 } from './mobile-api.types.js'
+import { getLatestConversationSummary } from './recognition-context.service.js'
 
 function clampLimit(limit: number | undefined, fallback: number, max: number): number {
   if (!Number.isFinite(limit)) return fallback
@@ -38,6 +39,7 @@ export class MobileApiService {
   getPersonDetail(personId: string, memoryLimit?: number, encounterLimit?: number): MobileApiPersonDetail | null {
     const person = this.peopleRepo.findById(personId)
     if (!person) return null
+    const latestConversation = getLatestConversationSummary(this.conversationRepo, personId)
 
     return {
       person: this.mapPerson(person),
@@ -47,6 +49,8 @@ export class MobileApiService {
       recentEncounters: this.encounterRepo
         .getEncountersByPerson(personId, clampLimit(encounterLimit, 10, 100))
         .map((encounter) => this.mapEncounter(encounter)),
+      latestConversationSummary: latestConversation.summary,
+      latestConversationRecordedAt: latestConversation.recordedAt,
     }
   }
 

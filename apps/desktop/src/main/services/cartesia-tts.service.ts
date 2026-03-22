@@ -82,6 +82,14 @@ export class CartesiaTtsService {
       options?.saveDebugAudio ?? (process.env['NODE_ENV'] !== 'production' || process.env['SAVE_TTS_DEBUG_AUDIO'] === '1')
   }
 
+  getModelId(): string {
+    return this.modelId
+  }
+
+  getVoiceId(): string {
+    return this.voiceId
+  }
+
   async synthesize(input: SynthesizeSpeechInput): Promise<SynthesizeSpeechResult> {
     const text = input.text.trim()
     if (!text) {

@@ -7,6 +7,7 @@ import type {
 } from '@emory/db'
 import { DeepgramService } from './deepgram.service.js'
 import { MemoryExtractionService } from './memory-extraction.service.js'
+import { ProfileKeyFactsService } from './profile-key-facts.service.js'
 
 export type ProcessRecordingInput = {
   personId: string
@@ -61,6 +62,7 @@ export class ConversationProcessingService {
     private relationshipRepo: RelationshipRepository,
     private deepgramService: DeepgramService,
     private memoryExtractionService: MemoryExtractionService,
+    private profileKeyFactsService: ProfileKeyFactsService,
   ) {}
 
   async processRecording(input: ProcessRecordingInput): Promise<ProcessRecordingResult> {
@@ -212,6 +214,41 @@ export class ConversationProcessingService {
         recordingId: recording.id,
         insertedCount: memories.length,
       })
+
+      const affectedPersonIds = [...new Set(memories.map((memory) => memory.personId))]
+      for (const personId of affectedPersonIds) {
+        const person = this.peopleRepo.findById(personId)
+        if (!person) continue
+
+        try {
+          const allMemories = this.conversationRepo.getAllMemoriesByPerson(personId)
+          const keyFacts = await this.profileKeyFactsService.synthesizeKeyFacts({
+            personName: person.name,
+            memories: allMemories.map((memory) => ({
+              memoryText: memory.memoryText,
+              memoryType: memory.memoryType,
+              memoryDate: memory.memoryDate,
+              confidence: memory.confidence,
+            })),
+          })
+
+          this.peopleRepo.updateProfile(personId, { keyFacts })
+          console.log('[memory-processing] key facts updated', {
+            recordingId: recording.id,
+            personId,
+            memoryCount: allMemories.length,
+            keyFactCount: keyFacts.length,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.error('[memory-processing] key fact synthesis failed', {
+            recordingId: recording.id,
+            personId,
+            error: message,
+          })
+        }
+      }
+
       return { recording, memories }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

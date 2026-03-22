@@ -19,6 +19,8 @@ struct DesktopPersonDetailResponse: Decodable {
     let person: DesktopPerson
     let recentMemories: [DesktopPersonMemory]
     let recentEncounters: [DesktopEncounter]
+    let latestConversationSummary: String?
+    let latestConversationRecordedAt: String?
 }
 
 struct DesktopMemoriesResponse: Decodable {
@@ -164,6 +166,16 @@ struct DesktopPersonFocusEvent: Decodable, Equatable {
     let ts: Double
     let reason: String
     let person: DesktopRecognizedPerson?
+}
+
+struct DesktopRecognitionContextResponse: Decodable {
+    let personId: String
+    let personName: String
+    let relationshipLabel: String?
+    let latestConversationSummary: String?
+    let latestConversationRecordedAt: String?
+    let announcementText: String
+    let fingerprint: String
 }
 
 struct DesktopConversationRecording: Decodable {

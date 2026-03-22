@@ -179,25 +179,6 @@ struct PersonDetailView: View {
                         }
                     }
 
-                    // Recent topics card
-                    profileCard(icon: "bubble.left.and.bubble.right", color: EmoryTheme.primary, title: "Recent Topics") {
-                        if resolvedPerson.lastTopics.isEmpty {
-                            emptyHint(icon: "bubble.left.and.bubble.right", text: "Topics from conversations will appear here.")
-                        } else {
-                            FlowLayout(spacing: 8) {
-                                ForEach(resolvedPerson.lastTopics, id: \.self) { topic in
-                                    Text(topic)
-                                        .font(.system(size: settings.fontSize.captionSize))
-                                        .foregroundStyle(EmoryTheme.primary)
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
-                                        .background(EmoryTheme.primary.opacity(0.08))
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                    }
-
                     // Conversation starters card
                     if !resolvedPerson.conversationStarters.isEmpty {
                         profileCard(icon: "text.bubble", color: EmoryTheme.tertiary, title: "Try Saying") {

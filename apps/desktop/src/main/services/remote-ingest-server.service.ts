@@ -24,6 +24,7 @@ import {
 import { MobileApiService } from './mobile-api.service.js'
 import { PersonFocusService, type PersonFocusMessage } from './person-focus.service.js'
 import type { ConversationIngestService } from './conversation-ingest.service.js'
+import type { RecognitionAnnouncementService } from './recognition-announcement.service.js'
 
 const MAX_SIGNALING_MESSAGE_BYTES = 512_000
 const MAX_CONVERSATION_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -145,6 +146,7 @@ export class RemoteIngestServerService {
     private readonly mobileApiService?: MobileApiService,
     private readonly bridgeLive?: RemoteIngestBridgeLiveDeps,
     private readonly conversationIngestService?: ConversationIngestService,
+    private readonly recognitionAnnouncementService?: RecognitionAnnouncementService,
   ) {
     this.personFocusService = bridgeLive
       ? new PersonFocusService(bridgeLive.peopleRepo, (message) => this.broadcastPersonFocus(message))
@@ -701,6 +703,55 @@ export class RemoteIngestServerService {
 
       if (req.method === 'GET' && pathname === '/api/v1/encounters/recent') {
         this.sendJson(res, 200, this.mobileApiService?.getRecentEncounters(this.parseLimit(url.searchParams.get('limit'))) ?? { encounters: [] })
+        return
+      }
+
+      const personRecognitionContextMatch = pathname.match(/^\/api\/v1\/people\/([^/]+)\/recognition-context$/)
+      if (req.method === 'GET' && personRecognitionContextMatch) {
+        if (!this.recognitionAnnouncementService) {
+          this.sendJson(res, 503, { error: 'Recognition announcement service unavailable' })
+          return
+        }
+
+        const personId = decodeURIComponent(personRecognitionContextMatch[1] ?? '')
+        const result = this.recognitionAnnouncementService.getContext(personId)
+        if (!result) {
+          this.sendJson(res, 404, { error: 'Person not found' })
+          return
+        }
+
+        this.sendJson(res, 200, result)
+        return
+      }
+
+      const personRecognitionAnnouncementMatch = pathname.match(/^\/api\/v1\/people\/([^/]+)\/recognition-announcement$/)
+      if (req.method === 'GET' && personRecognitionAnnouncementMatch) {
+        if (!this.recognitionAnnouncementService) {
+          this.sendJson(res, 503, { error: 'Recognition announcement service unavailable' })
+          return
+        }
+
+        const personId = decodeURIComponent(personRecognitionAnnouncementMatch[1] ?? '')
+        void (async () => {
+          try {
+            const result = await this.recognitionAnnouncementService?.getAnnouncement(personId)
+            if (!result) {
+              this.sendJson(res, 404, { error: 'Person not found' })
+              return
+            }
+
+            res.writeHead(200, {
+              'Content-Type': result.mimeType,
+              'Content-Length': String(result.audioBytes.byteLength),
+              'Cache-Control': 'no-store',
+              'X-Emory-Announcement-Fingerprint': result.fingerprint,
+            })
+            res.end(Buffer.from(result.audioBytes))
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            this.sendJson(res, 500, { error: message })
+          }
+        })()
         return
       }
 

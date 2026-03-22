@@ -135,6 +135,38 @@ struct SettingsView: View {
                                 .foregroundStyle(EmoryTheme.destructive)
                         }
                     }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Recognition Announcements")
+                                .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                                .foregroundStyle(EmoryTheme.textPrimary)
+                            Text("Speak the recognition summary before recording starts")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $settings.recognitionAnnouncementsEnabled)
+                            .tint(EmoryTheme.primary)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Require Meta Audio Route")
+                                .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                                .foregroundStyle(EmoryTheme.textPrimary)
+                            Text("Only play announcements when Ray-Ban / Meta audio is connected")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $settings.recognitionAnnouncementsRequireMetaRoute)
+                            .tint(EmoryTheme.primary)
+                    }
                 }
 
                 // DISPLAY section

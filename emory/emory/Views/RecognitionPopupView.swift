@@ -70,6 +70,20 @@ struct RecognitionPopupView: View {
                     .background(EmoryTheme.secondary.opacity(0.10))
                     .clipShape(Capsule())
 
+                    if presentation.isPlayingAnnouncement {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .tint(EmoryTheme.primary)
+                            Text("Playing in glasses")
+                                .font(.system(size: settings.fontSize.captionSize, weight: .semibold))
+                        }
+                        .foregroundStyle(EmoryTheme.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(EmoryTheme.primary.opacity(0.10))
+                        .clipShape(Capsule())
+                    }
+
                     // Info cards
                     if presentation.isLoadingDetail {
                         ProgressView()
@@ -77,6 +91,16 @@ struct RecognitionPopupView: View {
                             .padding(.vertical, 8)
                     } else {
                         VStack(spacing: 10) {
+                            if let latestConversationSummary = presentation.latestConversationSummary,
+                               !latestConversationSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                infoCard(
+                                    icon: "speaker.wave.2.fill",
+                                    color: EmoryTheme.secondary,
+                                    title: "Latest Conversation",
+                                    items: [latestConversationSummary]
+                                )
+                            }
+
                             // Key facts
                             if !person.keyFacts.isEmpty {
                                 infoCard(
