@@ -23,6 +23,8 @@ final class MicrophoneCaptureService {
     private let audioEngine = AVAudioEngine()
     private var levelContinuation: AsyncStream<Float>.Continuation?
     private(set) var isCapturing = false
+    private var activeAudioSource: AudioSource = .iphone
+    private var routeChangeObserver: NSObjectProtocol?
 
     // Ring buffer of recent audio for future backend use (~10 seconds)
     // Accessed only on bufferQueue to avoid main thread contention
@@ -65,6 +67,7 @@ final class MicrophoneCaptureService {
         guard !isCapturing else { return }
 
         let session = AVAudioSession.sharedInstance()
+        activeAudioSource = audioSource
 
         if !skipSessionConfig {
             // voiceChat mode enables AGC + echo cancellation + noise suppression
@@ -77,59 +80,9 @@ final class MicrophoneCaptureService {
             try session.setActive(true)
         }
 
-        Self.selectPreferredInput(source: audioSource)
-
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            guard let self = self else { return }
-            let level = Self.computeRMS(buffer)
-            self.levelContinuation?.yield(level)
-
-            // Forward to bridge server if callback is set
-            self.onAudioBuffer?(buffer, format.sampleRate, Int(format.channelCount))
-
-            if self.isConversationRecording, let file = self.conversationRecordingFile {
-                do {
-                    try file.write(from: buffer)
-                } catch {
-                    self.conversationRecordingWriteError = error.localizedDescription
-                    self.isConversationRecording = false
-                    self.conversationRecordingFile = nil
-                    print("[Mic] Conversation recording write failed: \(error.localizedDescription)")
-                }
-            }
-
-            // Store buffer on a background queue to avoid main thread contention
-            self.bufferQueue.async { [weak self] in
-                guard let self = self else { return }
-                self.recentBuffers.append(buffer)
-                if self.recentBuffers.count > self.maxBufferCount {
-                    self.recentBuffers.removeFirst()
-                }
-                if self.isRecording {
-                    self.recordingBuffers.append(buffer)
-                }
-            }
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
+        try configureCaptureGraph()
         isCapturing = true
-
-        // Monitor audio route changes — restart engine if route switches
-        NotificationCenter.default.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self = self, self.isCapturing else { return }
-            // Restart engine to pick up new route
-            if !self.audioEngine.isRunning {
-                try? self.audioEngine.start()
-            }
-        }
+        observeRouteChanges()
     }
 
     // MARK: - Stop Capture
@@ -137,7 +90,10 @@ final class MicrophoneCaptureService {
     func stop(deactivateSession: Bool = true) {
         guard isCapturing else { return }
 
-        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+        if let routeChangeObserver {
+            NotificationCenter.default.removeObserver(routeChangeObserver)
+            self.routeChangeObserver = nil
+        }
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
@@ -149,6 +105,19 @@ final class MicrophoneCaptureService {
         isCapturing = false
         bufferQueue.sync { recentBuffers.removeAll() }
         levelContinuation?.yield(0.0)
+    }
+
+    func refreshCaptureAfterSessionChange() {
+        guard isCapturing else { return }
+
+        do {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            try configureCaptureGraph()
+            print("[Mic] Refreshed capture graph after audio session change")
+        } catch {
+            print("[Mic] Failed to refresh capture graph: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Get Recent Buffers (for future backend use)
@@ -302,6 +271,63 @@ final class MicrophoneCaptureService {
     }
 
     // MARK: - Audio Route Selection
+
+    private func configureCaptureGraph() throws {
+        Self.selectPreferredInput(source: activeAudioSource)
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self = self else { return }
+            let level = Self.computeRMS(buffer)
+            self.levelContinuation?.yield(level)
+
+            // Forward to bridge server if callback is set.
+            self.onAudioBuffer?(buffer, format.sampleRate, Int(format.channelCount))
+
+            if self.isConversationRecording, let file = self.conversationRecordingFile {
+                do {
+                    try file.write(from: buffer)
+                } catch {
+                    self.conversationRecordingWriteError = error.localizedDescription
+                    self.isConversationRecording = false
+                    self.conversationRecordingFile = nil
+                    print("[Mic] Conversation recording write failed: \(error.localizedDescription)")
+                }
+            }
+
+            // Store buffer on a background queue to avoid main thread contention.
+            self.bufferQueue.async { [weak self] in
+                guard let self = self else { return }
+                self.recentBuffers.append(buffer)
+                if self.recentBuffers.count > self.maxBufferCount {
+                    self.recentBuffers.removeFirst()
+                }
+                if self.isRecording {
+                    self.recordingBuffers.append(buffer)
+                }
+            }
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+    }
+
+    private func observeRouteChanges() {
+        if let routeChangeObserver {
+            NotificationCenter.default.removeObserver(routeChangeObserver)
+        }
+
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.isCapturing else { return }
+            self.refreshCaptureAfterSessionChange()
+        }
+    }
 
     /// Sets `AVAudioSession.preferredInput` to the built-in mic or a Bluetooth (Ray-Ban) input.
     private static func selectPreferredInput(source: AudioSource) {
