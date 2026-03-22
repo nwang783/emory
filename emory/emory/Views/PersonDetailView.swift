@@ -1,5 +1,29 @@
+import CoreTransferable
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 import UIKit
+
+private struct PickedVideoFile: Transferable, Sendable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { received in
+            let temporaryDirectory = FileManager.default.temporaryDirectory
+            let fileExtension = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
+            let destinationURL = temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: false)
+                .appendingPathExtension(fileExtension)
+
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+
+            try FileManager.default.copyItem(at: received.file, to: destinationURL)
+            return .init(url: destinationURL)
+        }
+    }
+}
 
 // MARK: - Person Detail View
 // Shows a person's profile and recent memory context.
@@ -7,6 +31,7 @@ import UIKit
 struct PersonDetailView: View {
     let person: Person
     @State private var settings = AppSettings.shared
+    @State private var profileVideoStore = ProfileVideoStore.shared
     @State private var showAddNote = false
     @State private var newNoteTitle = ""
     @State private var newNoteSubtitle = ""
@@ -22,9 +47,19 @@ struct PersonDetailView: View {
     @State private var loadError: String?
     @State private var headerVisible = false
     @State private var cardsVisible = false
+    @State private var showVideoSourcePicker = false
+    @State private var showPhotoLibraryPicker = false
+    @State private var showVideoFileImporter = false
+    @State private var selectedVideoPickerItem: PhotosPickerItem?
+    @State private var isImportingVideo = false
+    @State private var videoImportErrorMessage: String?
+    @State private var showVideoPlayer = false
 
     private var resolvedPerson: Person { detailPerson ?? person }
     private var relationshipColor: Color { EmoryTheme.relationshipColor(for: resolvedPerson.relationship) }
+    private var profileVideoMetadata: ProfileVideoMetadata? { profileVideoStore.metadata(for: person.id) }
+    private var profileVideoURL: URL? { profileVideoStore.videoURL(for: person.id) }
+    private var profileVideoThumbnailURL: URL? { profileVideoStore.thumbnailURL(for: person.id) }
 
     var body: some View {
         ScrollView {
@@ -39,6 +74,71 @@ struct PersonDetailView: View {
                             .padding(.vertical, 20)
                     } else if let loadError, !settings.isMockMode {
                         errorBanner(loadError)
+                    }
+
+                    profileCard(icon: "video.fill", color: relationshipColor, title: "Message Video") {
+                        if let metadata = profileVideoMetadata,
+                           profileVideoURL != nil {
+                            Button {
+                                Haptics.light()
+                                showVideoPlayer = true
+                            } label: {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    ZStack {
+                                        ProfileVideoThumbnailView(thumbnailURL: profileVideoThumbnailURL)
+                                            .frame(maxWidth: .infinity)
+                                            .frame(height: 188)
+
+                                        Image(systemName: "play.circle.fill")
+                                            .font(.system(size: 54))
+                                            .foregroundStyle(.white)
+                                            .shadow(color: Color.black.opacity(0.28), radius: 10, y: 4)
+                                    }
+
+                                    HStack {
+                                        Label(metadata.durationText, systemImage: "clock.fill")
+                                        Spacer()
+                                        Text(metadata.fileSizeText)
+                                    }
+                                    .font(.system(size: settings.fontSize.captionSize, weight: .medium))
+                                    .foregroundStyle(EmoryTheme.textSecondary)
+
+                                    Text("Tap to play the prerecorded message.")
+                                        .font(.system(size: settings.fontSize.captionSize))
+                                        .foregroundStyle(EmoryTheme.textSecondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(RoundedRectangle(cornerRadius: 18))
+                            .accessibilityLabel("Play message video for \(resolvedPerson.name)")
+                        } else if isImportingVideo {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                    .tint(relationshipColor)
+                                Text("Importing video…")
+                                    .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                                    .foregroundStyle(EmoryTheme.textPrimary)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 14) {
+                                emptyHint(
+                                    icon: "video.badge.plus",
+                                    text: "Add a calming prerecorded message for \(resolvedPerson.name) to watch from their profile."
+                                )
+
+                                Button {
+                                    showVideoSourcePicker = true
+                                } label: {
+                                    Label("Upload Video", systemImage: "square.and.arrow.up")
+                                        .font(.system(size: settings.fontSize.captionSize, weight: .semibold))
+                                        .foregroundStyle(relationshipColor)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(relationshipColor.opacity(0.10))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
                     }
 
                     // Key facts card
@@ -207,7 +307,7 @@ struct PersonDetailView: View {
                                 showRemoveConfirmation = true
                             }
                         } else {
-                            Text("This mobile view is currently read-only.")
+                            Text("Most profile details are read-only on mobile, but message videos can be updated here.")
                                 .font(.system(size: settings.fontSize.captionSize))
                                 .foregroundStyle(EmoryTheme.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,6 +364,64 @@ struct PersonDetailView: View {
                 showAddNote = false
             }
         }
+        .sheet(isPresented: $showVideoPlayer) {
+            if let videoURL = profileVideoURL {
+                ProfileVideoPlayerSheet(title: resolvedPerson.name, url: videoURL)
+            }
+        }
+        .confirmationDialog(
+            profileVideoMetadata == nil ? "Add Message Video" : "Change Message Video",
+            isPresented: $showVideoSourcePicker,
+            titleVisibility: .visible
+        ) {
+            Button("Choose from Library") {
+                showPhotoLibraryPicker = true
+            }
+            Button("Browse Files") {
+                showVideoFileImporter = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pick the prerecorded video you want available in \(resolvedPerson.name)'s profile.")
+        }
+        .photosPicker(
+            isPresented: $showPhotoLibraryPicker,
+            selection: $selectedVideoPickerItem,
+            matching: .videos,
+            preferredItemEncoding: .automatic
+        )
+        .fileImporter(
+            isPresented: $showVideoFileImporter,
+            allowedContentTypes: [.movie]
+        ) { result in
+            switch result {
+            case .success(let url):
+                Task {
+                    await importVideo(from: url, requiresSecurityScopedAccess: true)
+                }
+            case .failure(let error):
+                videoImportErrorMessage = error.localizedDescription
+            }
+        }
+        .onChange(of: selectedVideoPickerItem) { _, newValue in
+            guard let newValue else { return }
+
+            Task {
+                await importPickedVideo(from: newValue)
+            }
+        }
+        .alert("Video Upload Failed", isPresented: Binding(
+            get: { videoImportErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    videoImportErrorMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(videoImportErrorMessage ?? "")
+        }
         .task(id: "\(settings.isMockMode)-\(settings.backendURL)-\(person.id)") {
             await loadDetail()
         }
@@ -319,6 +477,20 @@ struct PersonDetailView: View {
                     Circle()
                         .stroke(relationshipColor.opacity(0.35), lineWidth: 3)
                         .frame(width: 106, height: 106)
+
+                    if profileVideoMetadata != nil {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 32, height: 32)
+                                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
+
+                            Image(systemName: "video.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(relationshipColor)
+                        }
+                        .offset(x: 36, y: -36)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -341,6 +513,31 @@ struct PersonDetailView: View {
                             .foregroundStyle(EmoryTheme.textSecondary)
                             .padding(.top, 2)
                     }
+
+                    Button {
+                        showVideoSourcePicker = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isImportingVideo {
+                                ProgressView()
+                                    .tint(relationshipColor)
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: profileVideoMetadata == nil ? "square.and.arrow.up" : "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+
+                            Text(profileVideoMetadata == nil ? "Upload Video" : "Change Video")
+                                .font(.system(size: settings.fontSize.captionSize, weight: .semibold))
+                        }
+                        .foregroundStyle(relationshipColor)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.72))
+                        .clipShape(Capsule())
+                    }
+                    .padding(.top, 12)
+                    .disabled(isImportingVideo)
                 }
 
                 Spacer()
@@ -461,6 +658,40 @@ struct PersonDetailView: View {
         case "health": return "cross.case"
         case "routine": return "clock"
         default: return "sparkles"
+        }
+    }
+
+    private func importPickedVideo(from item: PhotosPickerItem) async {
+        defer { selectedVideoPickerItem = nil }
+
+        do {
+            guard let pickedVideo = try await item.loadTransferable(type: PickedVideoFile.self) else {
+                throw ProfileVideoStoreError.noVideoSelected
+            }
+            await importVideo(from: pickedVideo.url, requiresSecurityScopedAccess: false)
+        } catch {
+            videoImportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func importVideo(from url: URL, requiresSecurityScopedAccess: Bool) async {
+        if requiresSecurityScopedAccess {
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+        }
+
+        isImportingVideo = true
+        defer { isImportingVideo = false }
+
+        do {
+            _ = try await profileVideoStore.importVideo(personId: person.id, from: url)
+            Haptics.success()
+        } catch {
+            videoImportErrorMessage = error.localizedDescription
         }
     }
 
