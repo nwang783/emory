@@ -242,11 +242,13 @@ export function RemoteIngestSettings(): React.JSX.Element {
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="remote-ingest-webrtc" className="text-sm">
-              Prefer WebRTC video (low latency)
+              WebRTC video (experimental)
             </Label>
             <p className="text-xs text-muted-foreground">
-              Camera uses <code className="font-mono-ui">/signaling</code> + WebRTC when on. Turn off to use JPEG-only{' '}
-              <code className="font-mono-ui">/ingest</code> (easier for simple clients).
+              <strong>Leave off</strong> for the same path as <code className="font-mono-ui">apps/bridge-server</code>: binary
+              video on <code className="font-mono-ui">ws://…/ingest</code> (what Emory iOS uses today). Turning this on
+              switches the desktop camera to <code className="font-mono-ui">/signaling</code> + WebRTC — the iOS app does{' '}
+              <strong>not</strong> open that socket yet, so you will see signaling timeouts until the phone implements it.
             </p>
           </div>
           <Switch

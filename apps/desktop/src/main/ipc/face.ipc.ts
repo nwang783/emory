@@ -15,6 +15,11 @@ const SIMILAR_FACE_WARNING_THRESHOLD = 0.55
 const autoLearnTimestamps = new Map<string, number>()
 
 let faceService: FaceService | null = null
+
+/** Main-process FaceService for remote ingest / bridge-live pipeline (null until `face:initialize` succeeds). */
+export function getMainFaceService(): FaceService | null {
+  return faceService
+}
 let activeDetectionThreshold = 0.35
 let activeMatchThreshold = 0.45
 let faceInitializationPromise: Promise<{ success: boolean; error?: string; provider?: string }> | null = null

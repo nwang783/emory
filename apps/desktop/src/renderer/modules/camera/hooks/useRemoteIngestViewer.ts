@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MSG_VIDEO_FRAME, parseBinaryMessage } from '@emory/ingest-protocol'
-import { logRemoteIngest } from '@/modules/camera/lib/remote-ingest-debug'
+import { logRemoteIngest, logRemoteIngestTerminal } from '@/modules/camera/lib/remote-ingest-debug'
 
 export type RemoteIngestViewerPhase =
   | 'idle'
@@ -9,14 +9,16 @@ export type RemoteIngestViewerPhase =
   | 'streaming'
   | 'error'
 
-const REMOTE_CAMERA_LABEL = 'Phone / glasses (remote ingest)'
+const REMOTE_CAMERA_LABEL = 'Phone / glasses (ingest WebSocket)'
 
-/** Heartbeat + stuck-detection interval (console visibility). */
-const HEARTBEAT_MS = 3000
+/** Heartbeat, ping, and stuck-detection interval. */
+const HEARTBEAT_MS = 5000
 /** Re-open WS if OPEN but still no JPEG frames after this long (publisher may have missed attach). */
-const BOUNCE_WAITING_PUBLISHER_MS = 6000
+const BOUNCE_WAITING_PUBLISHER_MS = 5000
 /** Re-open WS if stuck in browser CONNECTING state (rare tailnet / proxy stalls). */
-const BOUNCE_STUCK_CONNECTING_MS = 12000
+const BOUNCE_STUCK_CONNECTING_MS = 10000
+/** Expect `ingest_pong` from main-process server after `ingest_ping`. */
+const PING_PONG_DEADLINE_MS = 4000
 
 type UseRemoteIngestViewerArgs = {
   /** When false, WebSocket stays closed and start() is a no-op. */
@@ -63,6 +65,11 @@ export function useRemoteIngestViewer({
   const nonVideoBinaryRef = useRef(0)
   const framesDecodedRef = useRef(0)
   const parseFailuresRef = useRef(0)
+  const pingSeqRef = useRef(0)
+  const outstandingPingSeqRef = useRef<number | null>(null)
+  const outstandingPingDeadlineRef = useRef<number | null>(null)
+  const awaitingRelaySeqRef = useRef<number | null>(null)
+  const relayDeadlineRef = useRef<number | null>(null)
   const startRef = useRef<() => Promise<void>>(async () => {})
 
   const [phase, setPhase] = useState<RemoteIngestViewerPhase>('idle')
@@ -109,6 +116,10 @@ export function useRemoteIngestViewer({
         ctx.clearRect(0, 0, c.width, c.height)
       }
     }
+    outstandingPingSeqRef.current = null
+    outstandingPingDeadlineRef.current = null
+    awaitingRelaySeqRef.current = null
+    relayDeadlineRef.current = null
     logRemoteIngest('jpeg_ws_stop', {})
   }, [closeSocket])
 
@@ -178,6 +189,43 @@ export function useRemoteIngestViewer({
       if (decodeTokenRef.current !== token) return
 
       if (typeof ev.data === 'string') {
+        try {
+          const o = JSON.parse(ev.data) as {
+            type?: string
+            seq?: number
+            publisherPresent?: boolean
+            viewerCount?: number
+          }
+          if (o.type === 'ingest_pong') {
+            if (outstandingPingSeqRef.current === o.seq) {
+              outstandingPingSeqRef.current = null
+              outstandingPingDeadlineRef.current = null
+            }
+            logRemoteIngest('jpeg_ws_ingest_pong', {
+              seq: o.seq ?? null,
+              publisherPresent: o.publisherPresent ?? null,
+              viewerCount: o.viewerCount ?? null,
+            })
+            if (o.publisherPresent === true) {
+              awaitingRelaySeqRef.current = typeof o.seq === 'number' ? o.seq : null
+              relayDeadlineRef.current = Date.now() + PING_PONG_DEADLINE_MS
+            } else {
+              awaitingRelaySeqRef.current = null
+              relayDeadlineRef.current = null
+            }
+            return
+          }
+          if (o.type === 'ingest_pong_relay') {
+            if (awaitingRelaySeqRef.current === o.seq) {
+              awaitingRelaySeqRef.current = null
+              relayDeadlineRef.current = null
+            }
+            logRemoteIngest('jpeg_ws_ingest_pong_relay', { seq: o.seq ?? null })
+            return
+          }
+        } catch {
+          // not JSON
+        }
         logRemoteIngest('jpeg_ws_text_message', {
           length: ev.data.length,
           preview: ev.data.slice(0, 160),
@@ -272,8 +320,74 @@ export function useRemoteIngestViewer({
         port,
       })
 
+      const od = outstandingPingDeadlineRef.current
+      const ops = outstandingPingSeqRef.current
+      if (ops !== null && od !== null && now > od) {
+        logRemoteIngestTerminal({
+          action: 'ingest_ping_timeout',
+          transport: 'ingest-ws',
+          seq: ops,
+          host,
+          port,
+          phase: p,
+        })
+        logRemoteIngest('jpeg_ws_ping_timeout', { seq: ops, host, port })
+        outstandingPingSeqRef.current = null
+        outstandingPingDeadlineRef.current = null
+      }
+
+      const rd = relayDeadlineRef.current
+      const ars = awaitingRelaySeqRef.current
+      if (ars !== null && rd !== null && now > rd) {
+        logRemoteIngestTerminal({
+          action: 'ingest_phone_relay_timeout',
+          transport: 'ingest-ws',
+          seq: ars,
+          host,
+          port,
+          hint: 'Publisher socket was present but no ingest_pong_relay from phone (update iOS or check relay).',
+        })
+        logRemoteIngest('jpeg_ws_relay_timeout', { seq: ars })
+        awaitingRelaySeqRef.current = null
+        relayDeadlineRef.current = null
+      }
+
+      if (
+        ws &&
+        rs === WebSocket.OPEN &&
+        p !== 'idle' &&
+        p !== 'error' &&
+        outstandingPingSeqRef.current === null
+      ) {
+        const seq = pingSeqRef.current + 1
+        pingSeqRef.current = seq
+        outstandingPingSeqRef.current = seq
+        outstandingPingDeadlineRef.current = now + PING_PONG_DEADLINE_MS
+        try {
+          ws.send(JSON.stringify({ type: 'ingest_ping', seq }))
+        } catch (e) {
+          outstandingPingSeqRef.current = null
+          outstandingPingDeadlineRef.current = null
+          logRemoteIngestTerminal({
+            action: 'ingest_ping_send_failed',
+            transport: 'ingest-ws',
+            seq,
+            host,
+            port,
+            message: e instanceof Error ? e.message : String(e),
+          })
+        }
+      }
+
       if (p === 'waiting_publisher' && ws && rs === WebSocket.OPEN && openedAt) {
         if (now - openedAt >= BOUNCE_WAITING_PUBLISHER_MS) {
+          logRemoteIngestTerminal({
+            action: 'jpeg_ws_bounce',
+            reason: 'waiting_publisher_no_frames',
+            host,
+            port,
+            msSinceOpen: now - openedAt,
+          })
           logRemoteIngest('jpeg_ws_bounce', {
             reason: 'waiting_publisher_no_frames',
             msSinceOpen: now - openedAt,
@@ -284,6 +398,13 @@ export function useRemoteIngestViewer({
 
       if (p === 'connecting' && ws && rs === WebSocket.CONNECTING && connectAt) {
         if (now - connectAt >= BOUNCE_STUCK_CONNECTING_MS) {
+          logRemoteIngestTerminal({
+            action: 'jpeg_ws_bounce',
+            reason: 'connecting_stuck',
+            host,
+            port,
+            msSinceConnectStart: now - connectAt,
+          })
           logRemoteIngest('jpeg_ws_bounce', {
             reason: 'connecting_stuck',
             msSinceConnectStart: now - connectAt,

@@ -24,8 +24,10 @@ export type RemoteIngestConfig = {
   /** Shown in discovery UIs; not a security control. */
   friendlyName: string
   /**
-   * When true, Camera uses WebRTC `/signaling` (phone must send SDP offer).
-   * When false (default), uses JPEG-over-WebSocket `/ingest` — matches current iOS `BridgeServerService`.
+   * When false (default), Camera uses **`/ingest`** — same binary WebSocket protocol as **`apps/bridge-server`**
+   * (`MSG_VIDEO_FRAME`, etc.). Current Emory iOS opens this path only.
+   * When true, Camera uses WebRTC **`/signaling`**; the iOS app does **not** connect there yet, so leave off
+   * unless you are implementing phone-side signaling + SDP offer.
    */
   webrtcVideoPreferred: boolean
 }

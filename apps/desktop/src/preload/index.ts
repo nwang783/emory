@@ -181,6 +181,9 @@ const emoryApi = {
       webrtcVideoPreferred?: boolean
     }) => ipcRenderer.invoke('remote-ingest:apply', payload),
 
+    logTerminalEvent: (payload: Record<string, unknown>): Promise<{ ok: true }> =>
+      ipcRenderer.invoke('remote-ingest:log-terminal-event', payload),
+
     onUpdated: (
       handler: (payload: {
         config: {

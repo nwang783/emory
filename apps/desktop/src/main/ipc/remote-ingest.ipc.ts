@@ -70,4 +70,19 @@ export function registerRemoteIngestIpc(
       return { success: false as const, error: message }
     }
   })
+
+  ipcMain.handle('remote-ingest:log-terminal-event', (_event, payload: unknown) => {
+    const base =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : { value: payload }
+    console.log(
+      JSON.stringify({
+        service: 'remote-ingest',
+        source: 'renderer',
+        ...base,
+      }),
+    )
+    return { ok: true as const }
+  })
 }

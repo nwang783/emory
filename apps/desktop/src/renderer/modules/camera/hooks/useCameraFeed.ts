@@ -5,12 +5,13 @@ import { useRemoteIngestWebRtc, type RemoteIngestWebRtcPhase } from './useRemote
 import { useRemoteIngestStore } from '@/shared/stores/remote-ingest.store'
 import { logRemoteIngest } from '@/modules/camera/lib/remote-ingest-debug'
 
-/** Active remote hook phase when using ingest (JPEG or WebRTC); null for local camera. */
+/** Active remote hook phase when using ingest WebSocket or WebRTC; null for local camera. */
 export type RemoteIngestConnectionPhase = RemoteIngestViewerPhase | RemoteIngestWebRtcPhase
 
 export type CameraFeedMode = 'local' | 'remote'
 
-export type RemoteIngestTransport = 'webrtc' | 'jpeg-ws'
+/** `ingest-ws` = `/ingest` binary relay, same protocol as `apps/bridge-server`. */
+export type RemoteIngestTransport = 'webrtc' | 'ingest-ws'
 
 const PREFER_LOCAL_STORAGE_KEY = 'emory-camera-prefer-local'
 
@@ -29,7 +30,7 @@ export type UseCameraFeedResult = {
   error: string | null
   cameraLabel: string | null
   remoteStatusHint: string | null
-  /** JPEG/WebRTC connection phase; null when `mode === 'local'`. */
+  /** Ingest WebSocket or WebRTC phase; null when `mode === 'local'`. */
   remotePhase: RemoteIngestConnectionPhase | null
   start: () => Promise<void>
   stop: () => void
@@ -77,11 +78,11 @@ export function useCameraFeed(): UseCameraFeedResult {
 
   const useRemote = remoteIngestAvailable && !preferLocalOverride
   const useWebrtc = useRemote && webrtcVideoPreferred
-  const useJpeg = useRemote && !webrtcVideoPreferred
+  const useIngestWs = useRemote && !webrtcVideoPreferred
 
   const local = useWebcam()
-  const jpegRemote = useRemoteIngestViewer({
-    armed: useJpeg,
+  const ingestWsRemote = useRemoteIngestViewer({
+    armed: useIngestWs,
     host: effectiveHost,
     port: signalingPort,
   })
@@ -93,28 +94,28 @@ export function useCameraFeed(): UseCameraFeedResult {
 
   const stop = useCallback(() => {
     local.stop()
-    jpegRemote.stop()
+    ingestWsRemote.stop()
     webrtcRemote.stop()
-  }, [local, jpegRemote, webrtcRemote])
+  }, [local, ingestWsRemote, webrtcRemote])
 
   const start = useCallback(async () => {
     if (useRemote) {
       if (webrtcVideoPreferred) {
         await webrtcRemote.start()
       } else {
-        await jpegRemote.start()
+        await ingestWsRemote.start()
       }
     } else {
       await local.start()
     }
-  }, [useRemote, webrtcVideoPreferred, webrtcRemote, jpegRemote, local])
+  }, [useRemote, webrtcVideoPreferred, webrtcRemote, ingestWsRemote, local])
 
   const mode: CameraFeedMode = useRemote ? 'remote' : 'local'
 
   const isActive = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.isActive
-      : jpegRemote.isActive
+      : ingestWsRemote.isActive
     : local.isActive
 
   const feedReady =
@@ -122,68 +123,68 @@ export function useCameraFeed(): UseCameraFeedResult {
       ? local.isActive
       : webrtcVideoPreferred
         ? webrtcRemote.phase === 'streaming'
-        : jpegRemote.phase === 'streaming'
+        : ingestWsRemote.phase === 'streaming'
 
   const remoteTransport: RemoteIngestTransport | null = useRemote
     ? webrtcVideoPreferred
       ? 'webrtc'
-      : 'jpeg-ws'
+      : 'ingest-ws'
     : null
 
   const error = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.error
-      : jpegRemote.error
+      : ingestWsRemote.error
     : local.error
 
   const cameraLabel = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.cameraLabel
-      : jpegRemote.cameraLabel
+      : ingestWsRemote.cameraLabel
     : local.cameraLabel
 
   const captureFrame = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.captureFrame
-      : jpegRemote.captureFrame
+      : ingestWsRemote.captureFrame
     : local.captureFrame
 
   const frameWidth = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.frameWidth
-      : jpegRemote.frameWidth
+      : ingestWsRemote.frameWidth
     : local.frameWidth
 
   const frameHeight = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.frameHeight
-      : jpegRemote.frameHeight
+      : ingestWsRemote.frameHeight
     : local.frameHeight
 
   const remoteStatusHint = useMemo((): string | null => {
     if (!useRemote) return null
     if (webrtcVideoPreferred) {
       if (webrtcRemote.phase === 'signaling') {
-        return 'WebRTC: waiting for the phone to send an offer (same /signaling WebSocket).'
+        return 'WebRTC: waiting for the phone to send an offer on /signaling (not used by current Emory iOS).'
       }
       if (webrtcRemote.phase === 'negotiating') {
         return 'WebRTC: finishing handshake…'
       }
       return null
     }
-    if (jpegRemote.phase === 'connecting') {
-      return 'Connecting to JPEG ingest WebSocket…'
+    if (ingestWsRemote.phase === 'connecting') {
+      return 'Connecting to /ingest (same binary protocol as bridge-server)…'
     }
-    if (jpegRemote.phase === 'waiting_publisher') {
-      return 'Waiting for JPEG frames from the phone (/ingest publisher).'
+    if (ingestWsRemote.phase === 'waiting_publisher') {
+      return 'Waiting for video frames from the phone (publisher on /ingest).'
     }
     return null
-  }, [useRemote, webrtcVideoPreferred, webrtcRemote.phase, jpegRemote.phase])
+  }, [useRemote, webrtcVideoPreferred, webrtcRemote.phase, ingestWsRemote.phase])
 
   const remotePhase: RemoteIngestConnectionPhase | null = useRemote
     ? webrtcVideoPreferred
       ? webrtcRemote.phase
-      : jpegRemote.phase
+      : ingestWsRemote.phase
     : null
 
   useEffect(() => {
@@ -216,7 +217,7 @@ export function useCameraFeed(): UseCameraFeedResult {
     frameHeight,
     videoRef: local.videoRef,
     canvasRef: local.canvasRef,
-    previewCanvasRef: jpegRemote.previewCanvasRef,
+    previewCanvasRef: ingestWsRemote.previewCanvasRef,
     webRtcVideoRef: webrtcRemote.videoRef,
     webRtcCaptureCanvasRef: webrtcRemote.canvasRef,
   }

@@ -1,7 +1,11 @@
 import http from 'node:http'
 import type { Socket } from 'node:net'
 import dgram from 'node:dgram'
-import { WebSocketServer, WebSocket } from 'ws'
+import { WebSocketServer, WebSocket, type RawData } from 'ws'
+import type { FaceService } from '@emory/core'
+import type { PeopleRepository } from '@emory/db'
+import { FrameProcessor } from '@emory/bridge-live'
+import { MSG_VIDEO_FRAME, parseBinaryMessage } from '@emory/ingest-protocol'
 import type { RemoteIngestPersisted } from './remote-ingest-settings.service.js'
 import {
   REMOTE_INGEST_MULTICAST_ADDRESS,
@@ -20,6 +24,13 @@ import {
 import { MobileApiService } from './mobile-api.service.js'
 
 const MAX_SIGNALING_MESSAGE_BYTES = 512_000
+
+function rawDataToUtf8(data: RawData): string {
+  if (Buffer.isBuffer(data)) return data.toString('utf8')
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8')
+  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
+  return String(data)
+}
 
 function remoteIngestClientIp(req: http.IncomingMessage): string {
   const xff = req.headers['x-forwarded-for']
@@ -46,6 +57,74 @@ function logRemoteIngestMobileHttpHit(req: http.IncomingMessage, pathname: strin
   )
 }
 
+/** Standalone HTML page served at GET /viewer for browser-based debug of the raw video feed. */
+function VIEWER_HTML(hostPort: string): string {
+  return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emory — live viewer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;color:#eee;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh}
+canvas{max-width:100vw;max-height:90vh;border:1px solid #333;background:#000}
+#status{padding:8px 16px;font-size:14px;color:#888}
+#stats{padding:4px 16px;font-size:12px;color:#555}
+</style></head><body>
+<canvas id="feed" width="640" height="480"></canvas>
+<div id="status">Connecting…</div>
+<div id="stats"></div>
+<script>
+const canvas=document.getElementById('feed'),ctx=canvas.getContext('2d');
+const status=document.getElementById('status'),stats=document.getElementById('stats');
+let frames=0,bytes=0,startTime=Date.now(),ws;
+
+function connect(){
+  status.textContent='Connecting…';
+  ws=new WebSocket('ws://'+location.host+'/ingest?role=viewer');
+  ws.binaryType='arraybuffer';
+
+  ws.onopen=()=>{status.textContent='Connected — waiting for publisher…';};
+  ws.onclose=()=>{status.textContent='Disconnected — reconnecting in 2s…';setTimeout(connect,2000);};
+  ws.onerror=()=>{};
+
+  ws.onmessage=(ev)=>{
+    if(typeof ev.data==='string'){
+      try{const j=JSON.parse(ev.data);
+        if(j.type==='ingest_pong'){
+          status.textContent=j.publisherPresent?'Publisher connected — waiting for frames…':'Connected — no publisher';
+        }
+      }catch{}
+      return;
+    }
+    const u8=new Uint8Array(ev.data);
+    if(u8.length<8)return;
+    const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+    const msgType=dv.getUint32(0,true);
+    if(msgType!==1)return;
+    const metaLen=dv.getUint32(4,true);
+    const payload=u8.subarray(8+metaLen);
+    const blob=new Blob([payload],{type:'image/jpeg'});
+    createImageBitmap(blob).then(bmp=>{
+      canvas.width=bmp.width;canvas.height=bmp.height;
+      ctx.drawImage(bmp,0,0);bmp.close();
+      frames++;bytes+=payload.byteLength;
+      const elapsed=(Date.now()-startTime)/1000;
+      status.textContent='Streaming ('+bmp.width+'×'+bmp.height+')';
+      stats.textContent=frames+' frames | '+Math.round(frames/elapsed)+' fps | '+(bytes/1024/1024).toFixed(1)+' MB';
+    }).catch(()=>{});
+  };
+}
+connect();
+setInterval(()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'ingest_ping',seq:Date.now()}));},3000);
+</script></body></html>`
+}
+
+/** Same face pipeline as `apps/bridge-server` (Meta Ray-Bans live); runs on `/ingest` publisher in Electron. */
+export type RemoteIngestBridgeLiveDeps = {
+  peopleRepo: PeopleRepository
+  getFaceService: () => FaceService | null
+}
+
 export class RemoteIngestServerService {
   private httpServer: http.Server | null = null
   private ingestWss: WebSocketServer | null = null
@@ -57,8 +136,112 @@ export class RemoteIngestServerService {
   private beaconSocket: dgram.Socket | null = null
   private beaconTimer: ReturnType<typeof setInterval> | null = null
   private lastError: string | null = null
+  private bridgeProcessor: FrameProcessor | null = null
 
-  constructor(private readonly mobileApiService?: MobileApiService) {}
+  constructor(
+    private readonly mobileApiService?: MobileApiService,
+    private readonly bridgeLive?: RemoteIngestBridgeLiveDeps,
+  ) {}
+
+  private disposeBridgeProcessor(): void {
+    if (this.bridgeProcessor) {
+      this.bridgeProcessor.dispose()
+      this.bridgeProcessor = null
+    }
+  }
+
+  private initBridgeProcessorForPublisher(): void {
+    this.disposeBridgeProcessor()
+    if (!this.bridgeLive) return
+
+    const proc = new FrameProcessor(this.bridgeLive.peopleRepo, (result) => {
+      const payload = {
+        type: 'face_result' as const,
+        ts: result.timestamp,
+        matches: result.matches,
+        unknowns: result.unknowns,
+        ms: Math.round(result.processingMs),
+      }
+      const pub = this.publisher
+      if (pub && pub.readyState === WebSocket.OPEN) {
+        try {
+          pub.send(JSON.stringify(payload))
+        } catch {
+          // ignore send errors (socket closing)
+        }
+      }
+    })
+    proc.setFaceService(this.bridgeLive.getFaceService())
+    this.bridgeProcessor = proc
+  }
+
+  private handleIngestControlText(ws: WebSocket, req: http.IncomingMessage, fromViewer: boolean, text: string): void {
+    let msg: { type?: string; seq?: number }
+    try {
+      msg = JSON.parse(text) as { type?: string; seq?: number }
+    } catch {
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'ingest_text_non_json',
+          from: fromViewer ? 'viewer' : 'publisher',
+          remoteAddress: remoteIngestClientIp(req),
+          preview: text.slice(0, 120),
+        }),
+      )
+      return
+    }
+    const seq = typeof msg.seq === 'number' ? msg.seq : 0
+
+    if (msg.type === 'ingest_ping') {
+      const publisherPresent = this.publisher !== null && this.publisher.readyState === WebSocket.OPEN
+      const viewerCount = this.viewers.size
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'ingest_ping',
+          from: fromViewer ? 'viewer' : 'publisher',
+          seq,
+          remoteAddress: remoteIngestClientIp(req),
+          publisherPresent,
+          viewerCount,
+        }),
+      )
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'ingest_pong',
+            seq,
+            publisherPresent,
+            viewerCount,
+          }),
+        )
+      }
+      if (fromViewer && publisherPresent && this.publisher && this.publisher.readyState === WebSocket.OPEN) {
+        this.publisher.send(JSON.stringify({ type: 'ingest_ping_relay', seq }))
+      }
+      return
+    }
+
+    if (msg.type === 'ingest_pong_relay') {
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'ingest_pong_relay',
+          seq,
+          from: 'publisher',
+          remoteAddress: remoteIngestClientIp(req),
+        }),
+      )
+      const body = JSON.stringify({ type: 'ingest_pong_relay', seq })
+      for (const v of this.viewers) {
+        if (v.readyState === WebSocket.OPEN) {
+          v.send(body)
+        }
+      }
+      return
+    }
+  }
 
   private readonly handleHttpUpgrade = (req: http.IncomingMessage, socket: Socket, head: Buffer): void => {
     const path = req.url?.split('?')[0]
@@ -74,6 +257,22 @@ export class RemoteIngestServerService {
       })
       return
     }
+    // Bare-path fallback: bridge-server accepted ws://host:port with no path.
+    // Treat as publisher so old iOS clients (or ws:// URLs without /ingest) still work.
+    if ((path === '/' || path === '') && this.ingestWss) {
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'upgrade_bare_path_fallback',
+          remoteAddress: remoteIngestClientIp(req),
+          originalUrl: req.url ?? '',
+        }),
+      )
+      this.ingestWss.handleUpgrade(req, socket, head, (ws) => {
+        this.attachIngestSocket(ws, req)
+      })
+      return
+    }
     socket.destroy()
   }
 
@@ -83,8 +282,28 @@ export class RemoteIngestServerService {
 
     if (isViewer) {
       this.viewers.add(ws)
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'ingest_viewer_open',
+          remoteAddress: remoteIngestClientIp(req),
+          viewerCount: this.viewers.size,
+        }),
+      )
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) return
+        this.handleIngestControlText(ws, req, true, rawDataToUtf8(data))
+      })
       ws.on('close', () => {
         this.viewers.delete(ws)
+        console.log(
+          JSON.stringify({
+            service: 'remote-ingest',
+            action: 'ingest_viewer_close',
+            remoteAddress: remoteIngestClientIp(req),
+            viewerCount: this.viewers.size,
+          }),
+        )
       })
       ws.on('error', () => {
         this.viewers.delete(ws)
@@ -93,6 +312,7 @@ export class RemoteIngestServerService {
     }
 
     if (this.publisher && this.publisher.readyState === WebSocket.OPEN) {
+      this.disposeBridgeProcessor()
       try {
         this.publisher.close(1000, 'replaced')
       } catch {
@@ -100,24 +320,93 @@ export class RemoteIngestServerService {
       }
     }
     this.publisher = ws
+    this.initBridgeProcessorForPublisher()
+    console.log(
+      JSON.stringify({
+        service: 'remote-ingest',
+        action: 'ingest_publisher_open',
+        remoteAddress: remoteIngestClientIp(req),
+        bridgeLive: Boolean(this.bridgeLive),
+      }),
+    )
+
+    let publisherMessageCount = 0
+    let publisherBinaryCount = 0
+    let publisherTextCount = 0
 
     ws.on('message', (data, isBinary) => {
-      if (!isBinary) return
+      publisherMessageCount++
+      if (!isBinary) {
+        publisherTextCount++
+        if (publisherTextCount <= 3) {
+          console.log(
+            JSON.stringify({
+              service: 'remote-ingest',
+              action: 'publisher_text_message',
+              remoteAddress: remoteIngestClientIp(req),
+              messageNumber: publisherMessageCount,
+              preview: rawDataToUtf8(data).slice(0, 200),
+            }),
+          )
+        }
+        this.handleIngestControlText(ws, req, false, rawDataToUtf8(data))
+        return
+      }
+      publisherBinaryCount++
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+      if (publisherBinaryCount <= 3 || publisherBinaryCount % 100 === 0) {
+        console.log(
+          JSON.stringify({
+            service: 'remote-ingest',
+            action: 'publisher_binary_frame',
+            remoteAddress: remoteIngestClientIp(req),
+            binaryNumber: publisherBinaryCount,
+            bytes: buf.length,
+            viewerCount: this.viewers.size,
+          }),
+        )
+      }
       for (const v of this.viewers) {
         if (v.readyState === WebSocket.OPEN) {
           v.send(buf, { binary: true })
         }
       }
+
+      if (!this.bridgeProcessor || !this.bridgeLive) return
+
+      const u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+      const parsed = parseBinaryMessage(u8)
+      if (!parsed || parsed.messageType !== MSG_VIDEO_FRAME) return
+
+      this.bridgeProcessor.setFaceService(this.bridgeLive.getFaceService())
+      const meta = parsed.metadata as { w?: number; h?: number; ts?: number }
+      void this.bridgeProcessor.enqueue(
+        Buffer.from(parsed.payload),
+        meta.w ?? 720,
+        meta.h ?? 1280,
+        typeof meta.ts === 'number' ? meta.ts : Date.now() / 1000,
+      )
     })
 
-    const clearPublisher = (): void => {
+    const clearPublisher = (reason: string): void => {
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'ingest_publisher_close',
+          reason,
+          remoteAddress: remoteIngestClientIp(req),
+          binaryFramesReceived: publisherBinaryCount,
+          textMessagesReceived: publisherTextCount,
+          isCurrent: this.publisher === ws,
+        }),
+      )
       if (this.publisher === ws) {
+        this.disposeBridgeProcessor()
         this.publisher = null
       }
     }
-    ws.on('close', clearPublisher)
-    ws.on('error', clearPublisher)
+    ws.on('close', () => clearPublisher('ws_close'))
+    ws.on('error', () => clearPublisher('ws_error'))
   }
 
   private attachSignalingSocket(ws: WebSocket, req: http.IncomingMessage): void {
@@ -133,11 +422,49 @@ export class RemoteIngestServerService {
         }
       }
       this.desktopSig = ws
+      console.log(
+        JSON.stringify({
+          service: 'remote-ingest',
+          action: 'sig_desktop_open',
+          remoteAddress: remoteIngestClientIp(req),
+          mobileConnected: !!(this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN),
+        }),
+      )
       ws.on('message', (data, isBinary) => {
         if (isBinary) return
         const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
         if (buf.length > MAX_SIGNALING_MESSAGE_BYTES) return
         const text = buf.toString('utf8')
+        let control: { type?: string; seq?: number; mobileConnected?: boolean }
+        try {
+          control = JSON.parse(text) as { type?: string; seq?: number; mobileConnected?: boolean }
+        } catch {
+          if (this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN) {
+            this.mobileSig.send(text)
+          }
+          return
+        }
+        if (control.type === 'emory_sig_ping') {
+          const seq = typeof control.seq === 'number' ? control.seq : 0
+          const mobileConnected = !!(this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN)
+          console.log(
+            JSON.stringify({
+              service: 'remote-ingest',
+              action: 'sig_ping',
+              from: 'desktop',
+              seq,
+              remoteAddress: remoteIngestClientIp(req),
+              mobileConnected,
+            }),
+          )
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'emory_sig_pong', seq, mobileConnected }))
+          }
+          if (mobileConnected && this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN) {
+            this.mobileSig.send(JSON.stringify({ type: 'emory_sig_ping_relay', seq }))
+          }
+          return
+        }
         if (this.mobileSig && this.mobileSig.readyState === WebSocket.OPEN) {
           this.mobileSig.send(text)
         }
@@ -145,6 +472,13 @@ export class RemoteIngestServerService {
       const clear = (): void => {
         if (this.desktopSig === ws) {
           this.desktopSig = null
+          console.log(
+            JSON.stringify({
+              service: 'remote-ingest',
+              action: 'sig_desktop_close',
+              remoteAddress: remoteIngestClientIp(req),
+            }),
+          )
         }
       }
       ws.on('close', clear)
@@ -160,11 +494,44 @@ export class RemoteIngestServerService {
       }
     }
     this.mobileSig = ws
+    console.log(
+      JSON.stringify({
+        service: 'remote-ingest',
+        action: 'sig_mobile_open',
+        remoteAddress: remoteIngestClientIp(req),
+        desktopConnected: !!(this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN),
+      }),
+    )
     ws.on('message', (data, isBinary) => {
       if (isBinary) return
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
       if (buf.length > MAX_SIGNALING_MESSAGE_BYTES) return
       const text = buf.toString('utf8')
+      let control: { type?: string; seq?: number }
+      try {
+        control = JSON.parse(text) as { type?: string; seq?: number }
+      } catch {
+        if (this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN) {
+          this.desktopSig.send(text)
+        }
+        return
+      }
+      if (control.type === 'emory_sig_pong_relay') {
+        const seq = typeof control.seq === 'number' ? control.seq : 0
+        console.log(
+          JSON.stringify({
+            service: 'remote-ingest',
+            action: 'sig_pong_relay',
+            seq,
+            from: 'mobile',
+            remoteAddress: remoteIngestClientIp(req),
+          }),
+        )
+        if (this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN) {
+          this.desktopSig.send(text)
+        }
+        return
+      }
       if (this.desktopSig && this.desktopSig.readyState === WebSocket.OPEN) {
         this.desktopSig.send(text)
       }
@@ -172,6 +539,13 @@ export class RemoteIngestServerService {
     const clear = (): void => {
       if (this.mobileSig === ws) {
         this.mobileSig = null
+        console.log(
+          JSON.stringify({
+            service: 'remote-ingest',
+            action: 'sig_mobile_close',
+            remoteAddress: remoteIngestClientIp(req),
+          }),
+        )
       }
     }
     ws.on('close', clear)
@@ -204,6 +578,7 @@ export class RemoteIngestServerService {
 
   private closeWebSockets(): void {
     if (this.publisher) {
+      this.disposeBridgeProcessor()
       try {
         this.publisher.close()
       } catch {
@@ -391,10 +766,16 @@ export class RemoteIngestServerService {
         return
       }
 
+      if (req.method === 'GET' && pathname === '/viewer') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+        res.end(VIEWER_HTML(req.headers.host ?? '127.0.0.1:' + String(persisted.signalingPort)))
+        return
+      }
+
       if (req.method === 'GET' && pathname === '/') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
         res.end(
-          `Emory remote ingest — GET /health — WS ${REMOTE_INGEST_WS_PATH}?role=viewer|publisher — WS ${REMOTE_INGEST_SIGNALING_PATH}?role=desktop|mobile\n`,
+          `Emory remote ingest — GET /health — GET /viewer (debug) — WS ${REMOTE_INGEST_WS_PATH}?role=viewer|publisher — WS ${REMOTE_INGEST_SIGNALING_PATH}?role=desktop|mobile\n`,
         )
         return
       }

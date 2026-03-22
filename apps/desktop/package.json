@@ -12,11 +12,12 @@
     "test:camera-codecs": "bun test src/renderer/modules/camera/lib/orderVideoCodecsForIngest.test.ts",
     "manual:process-recording": "vite-node scripts/process-manual-recording.ts",
     "manual:query-memory": "vite-node scripts/query-manual-memory.ts",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "node ../../scripts/rebuild-electron-native.cjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3",
     "@electron-toolkit/utils": "^3",
+    "@emory/bridge-live": "workspace:*",
     "@emory/core": "workspace:*",
     "@emory/db": "workspace:*",
     "@emory/ingest-protocol": "workspace:*",

@@ -10,3 +10,13 @@ export function logRemoteIngest(event: string, payload?: RemoteIngestDebugPayloa
     console.info(PREFIX, event)
   }
 }
+
+/** Structured JSON in the Electron main terminal (remote-ingest service + renderer diagnostics). */
+export function logRemoteIngestTerminal(payload: RemoteIngestDebugPayload): void {
+  if (typeof window === 'undefined' || !window.emoryApi?.remoteIngest?.logTerminalEvent) return
+  try {
+    void window.emoryApi.remoteIngest.logTerminalEvent(payload)
+  } catch {
+    // ignore
+  }
+}

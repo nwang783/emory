@@ -649,7 +649,7 @@ export function WebcamFeed(): React.JSX.Element {
             {mode === 'remote' && remoteTransport === 'webrtc'
               ? 'Start remote camera (WebRTC)'
               : mode === 'remote'
-                ? 'Start remote camera (JPEG)'
+                ? 'Start remote camera (ingest / bridge)'
                 : 'Start camera'}
           </Button>
         ) : (

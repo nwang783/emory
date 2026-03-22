@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, session, shell, systemPreferences } from '
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { registerFaceIpc, disposeFaceService } from './ipc/face.ipc.js'
+import { registerFaceIpc, disposeFaceService, getMainFaceService } from './ipc/face.ipc.js'
 import { registerDbIpc } from './ipc/db.ipc.js'
 import { registerEncounterIpc } from './ipc/encounter.ipc.js'
 import { registerUnknownIpc } from './ipc/unknown.ipc.js'
@@ -164,7 +164,10 @@ app.whenReady().then(async () => {
 
   const remoteIngestSettings = new RemoteIngestSettingsService(app.getPath('userData'))
   const mobileApiService = new MobileApiService(peopleRepo, encounterRepo, conversationRepo)
-  const remoteIngestServer = new RemoteIngestServerService(mobileApiService)
+  const remoteIngestServer = new RemoteIngestServerService(mobileApiService, {
+    peopleRepo,
+    getFaceService: getMainFaceService,
+  })
   registerRemoteIngestIpc(remoteIngestSettings, remoteIngestServer)
   const remoteIngestPersisted = await remoteIngestSettings.load()
   if (remoteIngestPersisted.enabled) {
