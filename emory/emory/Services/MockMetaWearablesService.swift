@@ -74,14 +74,14 @@ final class MockMetaWearablesService: MetaWearablesService {
         sessionContinuation?.yield(.streaming)
         audioContinuation?.yield(true)
 
-        // Generate frames at ~15fps (matches real glasses rate)
+        // Generate frames at ~30fps
         frameTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { break }
                 let frame = self.generateSyntheticFrame()
                 self.frameContinuation?.yield(VideoFrameData(image: frame))
                 self.frameCount += 1
-                try? await Task.sleep(nanoseconds: 66_000_000) // ~15fps
+                try? await Task.sleep(nanoseconds: 33_000_000) // ~30fps
             }
         }
     }

@@ -7,6 +7,11 @@ import CoreMedia
 // WebSocket client that sends video frames + audio to the bridge server
 // and receives face recognition results + transcripts back.
 
+private struct IngestPingRelay: Decodable {
+    let type: String
+    let seq: Int?
+}
+
 @MainActor
 final class BridgeServerService {
 
@@ -122,7 +127,7 @@ final class BridgeServerService {
             // Fallback: JPEG encode (for mock service or raw codec)
             var mutableFrame = frameData
             guard let image = mutableFrame.displayImage,
-                  let jpeg = image.jpegData(compressionQuality: 0.3) else { return }
+                  let jpeg = image.jpegData(compressionQuality: 0.7) else { return }
             payloadData = jpeg
             codec = "jpeg"
         }
@@ -277,6 +282,22 @@ final class BridgeServerService {
 
         case "error":
             print("[Bridge] Server error: \(text)")
+
+        case "ingest_ping_relay":
+            // Desktop viewer → ingest server → phone: reply so desktop can confirm phone path (see remote-ingest-camera-debug.md).
+            if let relay = try? JSONDecoder().decode(IngestPingRelay.self, from: data) {
+                let seq = relay.seq ?? 0
+                let pong: [String: Any] = ["type": "ingest_pong_relay", "seq": seq]
+                if let json = try? JSONSerialization.data(withJSONObject: pong),
+                   let str = String(data: json, encoding: .utf8) {
+                    webSocketTask?.send(.string(str)) { err in
+                        if let err = err {
+                            print("[Bridge] ingest_pong_relay send error: \(err.localizedDescription)")
+                        }
+                    }
+                }
+                print("[Bridge] ingest_ping_relay seq=\(seq) → ingest_pong_relay")
+            }
 
         default:
             break

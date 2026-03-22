@@ -40,6 +40,8 @@ export type UseRemoteIngestViewerResult = {
   frameHeight: number
   isMuted: boolean
   toggleMute: () => void
+  /** MediaStream carrying decoded phone audio, suitable for MediaRecorder. Unaffected by mute. */
+  remoteAudioStream: MediaStream | null
 }
 
 function readyStateLabel(readyState: number | undefined): string | null {
@@ -86,12 +88,14 @@ export function useRemoteIngestViewer({
   const nextPlayTimeRef = useRef(0)
   const mutedRef = useRef(false)
   const gainNodeRef = useRef<GainNode | null>(null)
+  const streamDestRef = useRef<MediaStreamAudioDestinationNode | null>(null)
 
   const [phase, setPhase] = useState<RemoteIngestViewerPhase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [frameWidth, setFrameWidth] = useState(640)
   const [frameHeight, setFrameHeight] = useState(480)
   const [isMuted, setIsMuted] = useState(false)
+  const [remoteAudioStream, setRemoteAudioStream] = useState<MediaStream | null>(null)
 
   useEffect(() => {
     phaseRef.current = phase
@@ -127,8 +131,10 @@ export function useRemoteIngestViewer({
       }
       audioCtxRef.current = null
       gainNodeRef.current = null
+      streamDestRef.current = null
     }
     nextPlayTimeRef.current = 0
+    setRemoteAudioStream(null)
   }, [])
 
   const ensureAudioCtx = useCallback((): AudioContext => {
@@ -137,8 +143,11 @@ export function useRemoteIngestViewer({
       const gain = ctx.createGain()
       gain.gain.value = mutedRef.current ? 0 : 1
       gain.connect(ctx.destination)
+      const streamDest = ctx.createMediaStreamDestination()
       audioCtxRef.current = ctx
       gainNodeRef.current = gain
+      streamDestRef.current = streamDest
+      setRemoteAudioStream(streamDest.stream)
       nextPlayTimeRef.current = 0
     }
     if (audioCtxRef.current.state === 'suspended') {
@@ -173,6 +182,9 @@ export function useRemoteIngestViewer({
       const source = ctx.createBufferSource()
       source.buffer = buffer
       source.connect(gain)
+      if (streamDestRef.current) {
+        source.connect(streamDestRef.current)
+      }
 
       const now = ctx.currentTime
       if (nextPlayTimeRef.current < now) {
@@ -572,5 +584,6 @@ export function useRemoteIngestViewer({
     frameHeight,
     isMuted,
     toggleMute,
+    remoteAudioStream,
   }
 }

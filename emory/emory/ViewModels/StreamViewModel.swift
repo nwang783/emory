@@ -102,11 +102,12 @@ final class StreamViewModel {
                 self.log("Session started successfully")
                 self.bridgeService.sendSessionStart()
 
-                // Start iPhone mic capture alongside glasses video
+                // Start mic capture alongside glasses video — route depends on user setting
+                let audioSrc = AppSettings.shared.audioSource
                 do {
-                    try self.micService.start()
+                    try self.micService.start(audioSource: audioSrc)
                     self.isMicCapturing = true
-                    self.log("Microphone capture started")
+                    self.log("Microphone capture started (source: \(audioSrc.rawValue))")
                 } catch {
                     self.log("Mic start failed: \(error.localizedDescription)", level: .error)
                 }
@@ -148,7 +149,7 @@ final class StreamViewModel {
         guard !isMicCapturing else { return }
         log("Starting mic-only mode (no glasses)...")
         do {
-            try micService.start()
+            try micService.start(audioSource: AppSettings.shared.audioSource)
             isMicCapturing = true
 
             // Subscribe to mic level if not already

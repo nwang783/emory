@@ -8,6 +8,7 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
+    "@emory/bridge-live": "workspace:*",
     "@emory/core": "workspace:*",
     "@emory/db": "workspace:*",
     "ws": "^8.18.0",

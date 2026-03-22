@@ -4,6 +4,7 @@
 |-----|--------|
 | [apps/desktop.md](./apps/desktop.md) | Electron app: 7-tab layout, IPC, preload, stores, UI components |
 | [apps/desktop-ui.md](./apps/desktop-ui.md) | Desktop UI shell: Vercel/Tailscale-inspired tokens, fonts, sidebar/header |
+| [apps/remote-ingest-camera-debug.md](./apps/remote-ingest-camera-debug.md) | Camera remote JPEG: console debug prefix, heartbeats, auto-bounce, `feedReady` |
 | [apps/connections-graph.md](./apps/connections-graph.md) | Connections graph: edit flows, cascade to memories, where types live |
 | [packages/core.md](./packages/core.md) | Face engine, quality, liveness, appearance, grading services |
 | [packages/db.md](./packages/db.md) | SQLite adapter, repositories, schema through v6 (indexes, conversations), retention |
@@ -13,8 +14,11 @@
 | [architecture/remote-discovery.md](./architecture/remote-discovery.md) | UDP multicast beacon for phone discovery (manual config remains first-class) |
 | [architecture/ios-remote-ingest-client.md](./architecture/ios-remote-ingest-client.md) | **iOS implementer guide:** Tailscale, `/health`, WS `/ingest`, UDP beacon, manual config |
 | [architecture/remote-camera-desktop-plan.md](./architecture/remote-camera-desktop-plan.md) | Remote camera via ingest: WS `/ingest`, Camera viewer, `@emory/ingest-protocol` |
+| [architecture/bridge-live-and-desktop.md](./architecture/bridge-live-and-desktop.md) | **Bridge server** (Meta Ray-Bans live) + **`@emory/bridge-live`** shared with Electron `/ingest` |
+| [packages/bridge-live](../packages/bridge-live/) | Shared `FrameProcessor` (face pipeline for bridge + desktop ingest) |
 | [packages/ingest-protocol](../packages/ingest-protocol/) | Shared binary message IDs + parser (bridge-server + desktop ingest) |
 | [agents/gstack.md](./agents/gstack.md) | **gstack** skills: local **`.agents/`** (gitignored), clone + `./setup`, Windows/Git Bash, optional Cursor stubs |
+| [troubleshooting/better-sqlite3-node-version.md](./troubleshooting/better-sqlite3-node-version.md) | `better-sqlite3` ABI mismatch (bridge-server vs Node vs Electron) |
 
 Start with **desktop** for end-to-end behaviour, then **core** / **db** for types and persistence.
 

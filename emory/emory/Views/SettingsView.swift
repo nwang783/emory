@@ -29,13 +29,54 @@ struct SettingsView: View {
 
                     Divider()
 
+                    // Audio Source
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Audio Source")
+                                .font(.system(size: settings.fontSize.bodySize, weight: .medium))
+                                .foregroundStyle(EmoryTheme.textPrimary)
+                            Text("Choose which mic to stream to the desktop")
+                                .font(.system(size: settings.fontSize.captionSize))
+                                .foregroundStyle(EmoryTheme.textSecondary)
+                        }
+                        Spacer()
+                        Menu {
+                            ForEach(AudioSource.allCases) { source in
+                                Button {
+                                    settings.audioSource = source
+                                } label: {
+                                    HStack {
+                                        Text(source.rawValue)
+                                        if settings.audioSource == source {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(settings.audioSource.rawValue)
+                                    .font(.system(size: settings.fontSize.captionSize))
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 10))
+                            }
+                            .foregroundStyle(EmoryTheme.primary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(EmoryTheme.primary.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
+                    }
+
+                    Divider()
+
                     // Desktop URL
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Desktop URL")
                             .font(.system(size: settings.fontSize.bodySize, weight: .medium))
                             .foregroundStyle(EmoryTheme.textPrimary)
                         Text(
-                            "Use http:// (not https://) and host:port, e.g. http://10.0.0.237:18763. Test Connection checks /health. When you start streaming, the app opens ws://…/ingest?role=publisher to the same host — on the desktop turn OFF “Prefer WebRTC video” until the phone sends WebRTC; leave it off for JPEG ingest from this app."
+                            "Use http:// (not https://) and host:port, e.g. http://10.0.0.237:18763. Test Connection checks /health. Streaming opens ws://…/ingest?role=publisher — same binary protocol as apps/bridge-server. On the desktop leave “WebRTC video (experimental)” off unless the phone implements /signaling (not in this app yet)."
                         )
                             .font(.system(size: settings.fontSize.captionSize))
                             .foregroundStyle(EmoryTheme.textSecondary)

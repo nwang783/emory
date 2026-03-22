@@ -22,6 +22,23 @@ There is **no** shared protobuf package yet; use **JSON** and version fields as 
 
 **Important:** Until **TLS + pairing** exist, treat the service as **trusted tailnet only**. Do not expose the port to the public internet.
 
+### Settings → “Desktop URL” in the Emory iOS app (`AppSettings.backendURL`)
+
+This field drives **`DesktopApiClient`** (`emory/emory/Services/DesktopApiClient.swift`): **`URLSession` HTTP GET** to **`{base}/health`** and **`{base}/api/v1/...`**.
+
+| You enter | Example | Correct? |
+|-----------|---------|----------|
+| **HTTP base, no path** | `http://10.0.0.237:18763` | Yes — LAN IPv4 + ingest port |
+| **Tailscale** | `http://100.x.y.z:18763` | Yes |
+| **`https://`** | `https://10.0.0.237:18763` | Only if the desktop actually terminates TLS (default Electron ingest is **plain HTTP**) |
+| **`ws://` / `wss://`** | `ws://10.0.0.237:18763/ingest?role=publisher` | Optional power-user override. Normally use **`http://`** in Settings: **`StreamViewModel`** derives **`ws://host:port/ingest?role=publisher`** when you **start streaming** (glasses session). |
+| **Path suffix** | `http://10.0.0.237:18763/health` | Avoid — the client appends `/health` itself. Trailing slashes are trimmed when building the client. |
+
+**Debugging**
+
+- **iOS:** `DesktopConnectionStore` logs to **`os.Logger`** (subsystem = bundle id, category **`DesktopConnection`**) when you tap **Test Connection** — visible in **Xcode’s console** (and Console.app).
+- **Desktop:** When **Remote ingest** is enabled, successful hits to **`GET /health`** and **`GET /api/v1/*`** emit a **single JSON line** on **stderr** (Electron main / terminal) with `service: "remote-ingest"`, `action: "mobile_http_hit"`, `path`, `remoteAddress`, `userAgent`.
+
 ---
 
 ## Phase 0 — Implemented server behavior (implement first on iOS)
@@ -141,7 +158,7 @@ Desktop **Copy connection details** (Settings) pastes URLs like `http://100.x.y.
 
 ### WebRTC signaling (implemented on desktop — **mobile must implement publisher**)
 
-For **lower latency** than JPEG-over-`/ingest`, the desktop Camera tab (when **Settings → Prefer WebRTC video** is on) connects as **signaling role `desktop`** and expects the phone to be **`mobile`**.
+For **lower latency** than binary `/ingest`, the desktop Camera tab (when **Settings → WebRTC video (experimental)** is on) connects as **signaling role `desktop`** and expects the phone to be **`mobile`** (not implemented in Emory iOS yet).
 
 - **URL:** `ws://{host}:{signalingPort}{wsSignalingPath}?role=mobile` — e.g. `ws://100.x.y.z:18763/signaling?role=mobile`.
 - **Wire format:** UTF-8 **JSON** messages (one object per WebSocket message), max size enforced on server (~512 KB).

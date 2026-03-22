@@ -10,20 +10,20 @@ This document describes how the **Electron desktop app** exposes a **remote inge
 | **HTTP upgrade → WebSocket `/ingest`** — publisher → viewers (binary relay) | Implemented |
 | **HTTP upgrade → WebSocket `/signaling`** — JSON WebRTC signaling (`?role=desktop` \| `mobile`) | Implemented |
 | **Persisted settings** (`remote-ingest-config.json` in app userData) | Implemented |
-| **Settings UI** (bind mode, port, beacon, friendly name, **Prefer WebRTC video**) | Implemented |
+| **Settings UI** (bind mode, port, beacon, friendly name, **WebRTC video (experimental)** toggle) | Implemented |
 | **Camera tab** remote viewer (`?role=viewer` on `/ingest`) or WebRTC (`/signaling?role=desktop`) | Implemented |
 | **WebRTC on iOS** | Phone app must publish offer + ICE; see [ios-remote-ingest-client.md](./ios-remote-ingest-client.md) |
 | **Pairing + session tokens** | Planned |
 
 ## Topology
 
-1. **Tailscale** on iPhone and PC — same tailnet, devices get `100.x` addresses (and optional MagicDNS names).
+1. **Tailscale (optional)** — if installed on iPhone and PC, same tailnet gives `100.x` addresses (and optional MagicDNS names). Not required for **same Wi‑Fi LAN**.
 2. **Same Wi‑Fi LAN** — phone and PC can also use private IPv4 (e.g. `192.168.x.x`) when the listener accepts those interfaces.
 3. **Emory desktop** enables **Remote ingest** in **Settings** and listens on a **TCP port** (default **18763**).
 4. **Bind modes**
-   - **Tailscale + local LAN (default)** — listens on **`0.0.0.0`** (all IPv4 interfaces). Status, **Copy connection details**, **`GET /health`**, and the UDP beacon list **`advertisedAddresses`** with **100.x first**, then other NICs (Wi‑Fi/Ethernet). Use when you want **either** tailnet **or** home LAN clients.
+   - **All interfaces (default)** — listens on **`0.0.0.0`**. **`advertisedAddresses`** follow OS NIC order. **No Tailscale required** for same-Wi‑Fi LAN (e.g. `http://192.168.x.x:18763` / `10.x.x.x:18763` from the phone).
+   - **Tailscale + local LAN** — same listen address as **All**; lists **100.x first**, then other LAN IPs in **Copy** / beacon / **`GET /health`**. Use when you switch between tailnet and LAN and want tailnet-first hints.
    - **Tailscale (100.x) only** — binds only to the first `100.x` address. Fails if Tailscale is not connected. Does **not** accept direct `192.168.x` connections to another NIC.
-   - **All interfaces (`0.0.0.0`)** — same listen behavior as Tailscale + LAN; **address list** follows OS NIC order (not tailnet-first). Prefer **Tailscale + LAN** when you care about ordering.
    - **Loopback** — `127.0.0.1` for local development.
 
 ## HTTP API (Phase 0)

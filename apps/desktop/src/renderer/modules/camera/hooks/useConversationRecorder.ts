@@ -29,10 +29,14 @@ type UseConversationRecorderResult = {
  * Face-driven conversation capture: arm when a locked identity is primary (largest bbox),
  * record after start debounce, freeze personId for the segment, stop after stop debounce
  * when that person is absent from tracks.
+ *
+ * When `remoteAudioStream` is provided (remote ingest mode), it is used for recording
+ * instead of the local Windows microphone.
  */
 export function useConversationRecorder(
   isActive: boolean,
   tracksRef: RefObject<IdentityTrack[]>,
+  remoteAudioStream?: MediaStream | null,
 ): UseConversationRecorderResult {
   const [phase, setPhase] = useState<ConversationRecorderPhase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -64,7 +68,9 @@ export function useConversationRecorder(
   useEffect(() => {
     if (!isActive) {
       micBlockedRef.current = false
-      streamRef.current?.getTracks().forEach((t) => t.stop())
+      if (!remoteAudioStream) {
+        streamRef.current?.getTracks().forEach((t) => t.stop())
+      }
       streamRef.current = null
       setMicLabel(null)
       phaseRef.current = 'idle'
@@ -76,6 +82,16 @@ export function useConversationRecorder(
     setError(null)
     setMicLabel(null)
     micBlockedRef.current = false
+
+    if (remoteAudioStream && remoteAudioStream.getAudioTracks().length > 0) {
+      streamRef.current = remoteAudioStream
+      micBlockedRef.current = false
+      setMicLabel('Remote (phone / glasses)')
+      return () => {
+        cancelled = true
+        streamRef.current = null
+      }
+    }
 
     void navigator.mediaDevices
       .getUserMedia({
@@ -110,11 +126,13 @@ export function useConversationRecorder(
     return () => {
       cancelled = true
       window.setTimeout(() => {
-        streamRef.current?.getTracks().forEach((t) => t.stop())
+        if (!remoteAudioStream) {
+          streamRef.current?.getTracks().forEach((t) => t.stop())
+        }
         streamRef.current = null
       }, MIC_STREAM_RELEASE_DELAY_MS)
     }
-  }, [isActive])
+  }, [isActive, remoteAudioStream])
 
   useEffect(() => {
     if (!isActive) return

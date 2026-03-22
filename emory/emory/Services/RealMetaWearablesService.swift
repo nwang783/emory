@@ -119,7 +119,7 @@ final class RealMetaWearablesService: MetaWearablesService {
         let config = StreamSessionConfig(
             videoCodec: .raw,        // Raw frames — makeUIImage works, bridge gets JPEG fallback
             resolution: .high,       // 720x1280
-            frameRate: 15
+            frameRate: 30
         )
 
         let session = StreamSession(

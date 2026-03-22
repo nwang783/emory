@@ -34,7 +34,7 @@ apps/desktop/
     │   └── services/
     │       ├── cleanup.service.ts    # Periodic data retention cleanup job
     │       ├── remote-ingest-settings.service.ts  # Persist remote-ingest-config.json
-    │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest + WS /signaling (WebRTC JSON) + UDP beacon
+    │       ├── remote-ingest-server.service.ts   # HTTP /health + WS /ingest (relay + @emory/bridge-live face_result to phone) + /signaling + UDP beacon
     │       ├── remote-ingest-network.ts          # resolveListenHost, buildEffectiveAddresses (tailnet + LAN ordering)
     │       ├── remote-ingest.types.ts            # Config + status types
     │       ├── conversation-storage.service.ts # Write audio files under userData/conversations
@@ -60,7 +60,7 @@ apps/desktop/
         │   │   │   └── WhoIsThisButton.tsx # Voice announcement of identified people
         │   │   ├── hooks/
         │   │   │   ├── useWebcam.ts   # Webcam lifecycle management
-        │   │   │   ├── useCameraFeed.ts # Local vs remote ingest (JPEG or WebRTC)
+        │   │   │   ├── useCameraFeed.ts # Local vs remote ingest (`/ingest` = bridge protocol, or WebRTC)
         │   │   │   ├── useRemoteIngestWebRtc.ts # RTCPeerConnection answerer + /signaling
         │   │   │   └── useConversationRecorder.ts # Mic + MediaRecorder driven by face tracks
         │   │   └── lib/
@@ -147,11 +147,11 @@ apps/desktop/
 The **Remote ingest** card (`RemoteIngestSettings.tsx`) exposes:
 
 - **Enable** remote ingest HTTP listener; **bind** modes: **Tailscale + local LAN** (default, `0.0.0.0` + tailnet-first address list), Tailscale-only `100.x`, all interfaces (flat list), or loopback; **TCP port** (default 18763); **friendly name**; **UDP beacon**; **`/health` + beacon** expose **`advertisedAddresses`** for LAN vs tailnet.
-- **Prefer WebRTC video** (default on): Camera uses **`/signaling`** + WebRTC for lower latency; off = JPEG-only **`/ingest`** viewer path.
+- **WebRTC video (experimental)** (default **off**): Camera uses **`/signaling`** + WebRTC only when on; **off** = **`/ingest`** viewer path — **same binary protocol as `apps/bridge-server`** (what Emory iOS uses today).
 - **Apply & restart server** persists `<userData>/remote-ingest-config.json` and restarts the HTTP + WebSocket + beacon services.
 - **Copy connection details** puts health URLs, **`/ingest`**, **`/signaling`**, and instance id on the clipboard for manual phone setup.
 
-See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md), [Remote discovery](../architecture/remote-discovery.md), and [Remote camera (desktop) plan](../architecture/remote-camera-desktop-plan.md) (implemented viewer + WebRTC answerer; phone must implement publisher / offer).
+See [Remote ingest over Tailscale](../architecture/remote-ingest-tailscale.md), [Remote discovery](../architecture/remote-discovery.md), [Remote camera (desktop) plan](../architecture/remote-camera-desktop-plan.md), and [Bridge live + desktop](../architecture/bridge-live-and-desktop.md) (shared **`@emory/bridge-live`** face pipeline on `/ingest` publisher).
 
 The **Data Retention** card in `SettingsPanel` exposes:
 
@@ -613,6 +613,8 @@ Native modules are externalized from the Vite bundle:
 - `sharp` (image processing)
 
 `sharp`, `onnxruntime-node`, and `better-sqlite3` are also listed as **direct** dependencies in `apps/desktop/package.json` (alongside `@emory/core` / `@emory/db`). The main bundle externalizes them (`electron.vite.config.ts`); Node must resolve them from the desktop package at Electron runtime, so transitive-only hoisting can produce `ERR_MODULE_NOT_FOUND` for those imports.
+
+After `npm rebuild better-sqlite3` for **system Node** (e.g. bridge-server), run **`bun run rebuild:electron-native`** from the **repo root** so the hoisted addon matches **Electron** again. See [better-sqlite3-node-version.md](../troubleshooting/better-sqlite3-node-version.md).
 
 ### UI Stack
 - **Tailwind CSS v4** with `@tailwindcss/vite` plugin (required for Vite-based CSS processing)

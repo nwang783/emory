@@ -7,7 +7,7 @@ import {
   MSG_SESSION_END,
 } from './protocol.js'
 import type { FrameMetadata, AudioChunkMetadata, OutgoingMessage } from './protocol.js'
-import type { FrameProcessor } from './frame-processor.js'
+import type { FrameProcessor } from '@emory/bridge-live'
 import type { AudioProcessor } from './audio-processor.js'
 
 // MARK: - WebSocket Handler
