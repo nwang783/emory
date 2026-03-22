@@ -54,6 +54,8 @@ struct PersonDetailView: View {
     @State private var isImportingVideo = false
     @State private var videoImportErrorMessage: String?
     @State private var showVideoPlayer = false
+    @State private var isPlayingProfileSummary = false
+    @State private var profileSummaryErrorMessage: String?
 
     private var resolvedPerson: Person { detailPerson ?? person }
     private var relationshipColor: Color { EmoryTheme.relationshipColor(for: resolvedPerson.relationship) }
@@ -272,6 +274,15 @@ struct PersonDetailView: View {
 
                     // Action buttons
                     VStack(spacing: 12) {
+                        actionButton(
+                            icon: isPlayingProfileSummary ? "stop.circle.fill" : "speaker.wave.2.fill",
+                            label: isPlayingProfileSummary ? "Stop Summary" : "Play Summary",
+                            color: EmoryTheme.primary
+                        ) {
+                            Haptics.light()
+                            Task { await toggleProfileSummaryPlayback() }
+                        }
+
                         if settings.isMockMode {
                             actionButton(icon: "plus.circle.fill", label: "Add Note", color: EmoryTheme.secondary) {
                                 showAddNote = true
@@ -402,6 +413,18 @@ struct PersonDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(videoImportErrorMessage ?? "")
+        }
+        .alert("Summary Playback Failed", isPresented: Binding(
+            get: { profileSummaryErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    profileSummaryErrorMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(profileSummaryErrorMessage ?? "")
         }
         .task(id: "\(settings.isMockMode)-\(settings.backendURL)-\(person.id)") {
             await loadDetail()
@@ -671,6 +694,25 @@ struct PersonDetailView: View {
             await importVideo(from: pickedVideo.url, requiresSecurityScopedAccess: false)
         } catch {
             videoImportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func toggleProfileSummaryPlayback() async {
+        if isPlayingProfileSummary {
+            RecognitionAnnouncementPlayer.shared.stop()
+            isPlayingProfileSummary = false
+            return
+        }
+
+        isPlayingProfileSummary = true
+        defer { isPlayingProfileSummary = false }
+
+        do {
+            try await RecognitionAnnouncementPlayer.shared.playAnnouncement(for: resolvedPerson.id)
+        } catch is CancellationError {
+            return
+        } catch {
+            profileSummaryErrorMessage = error.localizedDescription
         }
     }
 

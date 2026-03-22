@@ -127,20 +127,6 @@ final class StreamViewModel {
         streamTasks.append(task)
     }
 
-    func suspendSessionForAnnouncement() async -> Bool {
-        guard isStreaming else { return false }
-        log("Suspending live stream for announcement playback")
-        stopSession()
-        try? await Task.sleep(for: .milliseconds(500))
-        return true
-    }
-
-    func resumeSessionAfterAnnouncement(ifNeeded shouldResume: Bool) async {
-        guard shouldResume else { return }
-        log("Resuming live stream after announcement playback")
-        startSession()
-    }
-
     func stopSession() {
         guard isStreaming else { return }
         log("Stopping session...")
