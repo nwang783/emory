@@ -23,8 +23,11 @@ import {
 } from './remote-ingest-network.js'
 import { MobileApiService } from './mobile-api.service.js'
 import { PersonFocusService, type PersonFocusMessage } from './person-focus.service.js'
+import type { ConversationIngestService } from './conversation-ingest.service.js'
 
 const MAX_SIGNALING_MESSAGE_BYTES = 512_000
+const MAX_CONVERSATION_UPLOAD_BYTES = 25 * 1024 * 1024
+const DEFAULT_CONVERSATION_UPLOAD_PATH = '/api/v1/conversations/upload'
 
 function rawDataToUtf8(data: RawData): string {
   if (Buffer.isBuffer(data)) return data.toString('utf8')
@@ -157,6 +160,7 @@ export class RemoteIngestServerService {
   constructor(
     private readonly mobileApiService?: MobileApiService,
     private readonly bridgeLive?: RemoteIngestBridgeLiveDeps,
+    private readonly conversationIngestService?: ConversationIngestService,
   ) {
     this.personFocusService = bridgeLive
       ? new PersonFocusService(bridgeLive.peopleRepo, (message) => this.broadcastPersonFocus(message))
@@ -737,6 +741,7 @@ export class RemoteIngestServerService {
           signalingPort: persisted.signalingPort,
           wsIngestPath: REMOTE_INGEST_WS_PATH,
           wsSignalingPath: REMOTE_INGEST_SIGNALING_PATH,
+          conversationUploadPath: DEFAULT_CONVERSATION_UPLOAD_PATH,
           advertisedAddresses: buildEffectiveAddresses(persisted.bindMode),
         })
         res.writeHead(200, {
@@ -744,6 +749,11 @@ export class RemoteIngestServerService {
           'Cache-Control': 'no-store',
         })
         res.end(body)
+        return
+      }
+
+      if (req.method === 'POST' && pathname === DEFAULT_CONVERSATION_UPLOAD_PATH) {
+        void this.handleConversationUpload(req, res, url)
         return
       }
 
@@ -944,6 +954,62 @@ export class RemoteIngestServerService {
       'Cache-Control': 'no-store',
     })
     res.end(JSON.stringify(body))
+  }
+
+  private async handleConversationUpload(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+  ): Promise<void> {
+    if (!this.conversationIngestService) {
+      this.sendJson(res, 503, { success: false, error: 'Conversation ingest is unavailable' })
+      return
+    }
+
+    const personId = url.searchParams.get('personId') ?? ''
+    const recordedAt = url.searchParams.get('recordedAt') ?? ''
+    const durationRaw = url.searchParams.get('durationMs')
+    const durationMs = durationRaw == null ? null : Number(durationRaw)
+    const mimeType = req.headers['content-type']?.split(';')[0]?.trim() ?? ''
+
+    let bytes: Buffer
+    try {
+      bytes = await this.readRequestBody(req, MAX_CONVERSATION_UPLOAD_BYTES)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.sendJson(res, 413, { success: false, error: message })
+      return
+    }
+
+    const result = await this.conversationIngestService.saveAndProcessBytes({
+      personId,
+      recordedAt,
+      mimeType,
+      durationMs: Number.isFinite(durationMs) ? durationMs : null,
+      audioBytes: new Uint8Array(bytes),
+    })
+    this.sendJson(res, result.success ? 200 : 400, result)
+  }
+
+  private readRequestBody(req: http.IncomingMessage, maxBytes: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = []
+      let total = 0
+
+      req.on('data', (chunk: Buffer | string) => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+        total += buffer.length
+        if (total > maxBytes) {
+          reject(new Error(`Upload exceeds ${maxBytes} bytes`))
+          req.destroy()
+          return
+        }
+        chunks.push(buffer)
+      })
+      req.on('end', () => resolve(Buffer.concat(chunks)))
+      req.on('error', reject)
+      req.on('aborted', () => reject(new Error('Upload aborted')))
+    })
   }
 
   private parseLimit(raw: string | null): number | undefined {

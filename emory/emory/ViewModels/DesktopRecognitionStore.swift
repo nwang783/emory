@@ -27,6 +27,7 @@ final class DesktopRecognitionStore {
     var presentedRecognition: PresentedRecognition?
 
     private let signalingService = DesktopRecognitionSignalingService()
+    private let conversationCaptureCoordinator = ConversationCaptureCoordinator.shared
     private var eventTask: Task<Void, Never>?
     private var detailFetchTask: Task<Void, Never>?
     private var lastSequence = 0
@@ -86,6 +87,7 @@ final class DesktopRecognitionStore {
     }
 
     private func handleStatusChange(_ status: DesktopRecognitionSignalingService.ConnectionStatus) {
+        conversationCaptureCoordinator.handleConnectionStatus(status)
         switch status {
         case .disconnected:
             isConnected = false
@@ -114,6 +116,7 @@ final class DesktopRecognitionStore {
             return
         }
         lastSequence = event.sequence
+        conversationCaptureCoordinator.handleFocusEvent(event)
 
         guard let recognizedPerson = event.person else {
             print("[RecogStore] No person in event, skipping")

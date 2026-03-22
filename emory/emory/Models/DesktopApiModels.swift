@@ -8,6 +8,7 @@ struct DesktopHealthResponse: Decodable {
     let friendlyName: String
     let signalingPort: Int
     let wsSignalingPath: String?
+    let conversationUploadPath: String?
 }
 
 struct DesktopPeopleResponse: Decodable {
@@ -163,4 +164,20 @@ struct DesktopPersonFocusEvent: Decodable, Equatable {
     let ts: Double
     let reason: String
     let person: DesktopRecognizedPerson?
+}
+
+struct DesktopConversationRecording: Decodable {
+    let id: String
+    let personId: String
+    let recordedAt: String
+    let audioPath: String
+    let mimeType: String
+    let durationMs: Int?
+}
+
+struct DesktopConversationUploadResponse: Decodable {
+    let success: Bool
+    let recording: DesktopConversationRecording?
+    let memories: [DesktopPersonMemory]?
+    let error: String?
 }
