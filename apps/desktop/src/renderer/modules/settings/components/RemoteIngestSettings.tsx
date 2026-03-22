@@ -43,13 +43,13 @@ type StatusPayload = {
 
 const REMOTE_INGEST_FORM_DEFAULT: ConfigForm = {
   enabled: false,
-  bindMode: 'tailscale_lan',
+  bindMode: 'all',
   signalingPort: 18763,
   beaconEnabled: true,
   beaconIntervalMs: 2000,
   mdnsEnabled: false,
   friendlyName: 'Emory home',
-  webrtcVideoPreferred: true,
+  webrtcVideoPreferred: false,
 }
 
 export function RemoteIngestSettings(): React.JSX.Element {

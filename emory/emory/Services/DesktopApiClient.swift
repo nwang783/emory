@@ -2,13 +2,16 @@ import Foundation
 
 enum DesktopApiError: LocalizedError {
     case invalidBaseURL
+    case unsupportedURLScheme(String)
     case invalidResponse
     case requestFailed(Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
-            return "Enter a valid desktop URL first."
+            return "Enter a valid desktop URL first (e.g. http://10.0.0.237:18763 — no path, not ws://)."
+        case .unsupportedURLScheme(let scheme):
+            return "Use http:// or https:// for this field (got \(scheme)://). WebSockets (ws://) are separate — see desktop Remote ingest docs."
         case .invalidResponse:
             return "The desktop returned an unreadable response."
         case .requestFailed(let statusCode):
@@ -30,9 +33,16 @@ struct DesktopApiClient {
 
     @MainActor
     static func fromSettings() throws -> DesktopApiClient {
-        let raw = AppSettings.shared.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        var raw = AppSettings.shared.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while raw.hasSuffix("/") {
+            raw.removeLast()
+        }
         guard let url = URL(string: raw), let scheme = url.scheme, !scheme.isEmpty else {
             throw DesktopApiError.invalidBaseURL
+        }
+        let normalizedScheme = scheme.lowercased()
+        guard normalizedScheme == "http" || normalizedScheme == "https" else {
+            throw DesktopApiError.unsupportedURLScheme(normalizedScheme)
         }
         return DesktopApiClient(baseURL: url)
     }

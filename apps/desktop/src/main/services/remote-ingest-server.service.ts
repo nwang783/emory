@@ -21,6 +21,31 @@ import { MobileApiService } from './mobile-api.service.js'
 
 const MAX_SIGNALING_MESSAGE_BYTES = 512_000
 
+function remoteIngestClientIp(req: http.IncomingMessage): string {
+  const xff = req.headers['x-forwarded-for']
+  if (typeof xff === 'string' && xff.trim().length > 0) {
+    return xff.split(',')[0]!.trim()
+  }
+  const a = req.socket.remoteAddress
+  return a ?? 'unknown'
+}
+
+/** Structured line for terminal when the iOS app (or Test Connection) hits HTTP APIs. */
+function logRemoteIngestMobileHttpHit(req: http.IncomingMessage, pathname: string): void {
+  const uaRaw = req.headers['user-agent']
+  const userAgent = typeof uaRaw === 'string' ? uaRaw.slice(0, 160) : ''
+  console.log(
+    JSON.stringify({
+      service: 'remote-ingest',
+      action: 'mobile_http_hit',
+      method: req.method ?? '',
+      path: pathname,
+      remoteAddress: remoteIngestClientIp(req),
+      userAgent,
+    }),
+  )
+}
+
 export class RemoteIngestServerService {
   private httpServer: http.Server | null = null
   private ingestWss: WebSocketServer | null = null
@@ -279,6 +304,10 @@ export class RemoteIngestServerService {
       const baseUrl = `http://${req.headers.host ?? '127.0.0.1'}`
       const url = new URL(req.url ?? '/', baseUrl)
       const pathname = url.pathname
+
+      if (req.method === 'GET' && (pathname === '/health' || pathname.startsWith('/api/v1/'))) {
+        logRemoteIngestMobileHttpHit(req, pathname)
+      }
 
       if (req.method === 'GET' && pathname === '/health') {
         const body = JSON.stringify({

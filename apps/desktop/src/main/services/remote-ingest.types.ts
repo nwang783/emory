@@ -24,8 +24,8 @@ export type RemoteIngestConfig = {
   /** Shown in discovery UIs; not a security control. */
   friendlyName: string
   /**
-   * When true (default), Camera uses WebRTC for remote video (lower latency).
-   * When false, uses JPEG-over-WebSocket `/ingest` only.
+   * When true, Camera uses WebRTC `/signaling` (phone must send SDP offer).
+   * When false (default), uses JPEG-over-WebSocket `/ingest` — matches current iOS `BridgeServerService`.
    */
   webrtcVideoPreferred: boolean
 }
@@ -48,14 +48,14 @@ export type RemoteIngestStatus = {
 
 export const REMOTE_INGEST_DEFAULT_CONFIG: RemoteIngestConfig = {
   enabled: false,
-  /** Listen on all interfaces; UI lists 100.x first then other LAN IPs (see `buildEffectiveAddresses`). */
-  bindMode: 'tailscale_lan',
+  /** Listen on all interfaces; address list follows OS order (no Tailscale required for LAN). */
+  bindMode: 'all',
   signalingPort: 18763,
   beaconEnabled: true,
   beaconIntervalMs: 2000,
   mdnsEnabled: false,
   friendlyName: 'Emory home',
-  webrtcVideoPreferred: true,
+  webrtcVideoPreferred: false,
 }
 
 export const REMOTE_INGEST_CONFIG_FILE = 'remote-ingest-config.json'

@@ -1,8 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useWebcam } from './useWebcam'
-import { useRemoteIngestViewer } from './useRemoteIngestViewer'
-import { useRemoteIngestWebRtc } from './useRemoteIngestWebRtc'
+import { useRemoteIngestViewer, type RemoteIngestViewerPhase } from './useRemoteIngestViewer'
+import { useRemoteIngestWebRtc, type RemoteIngestWebRtcPhase } from './useRemoteIngestWebRtc'
 import { useRemoteIngestStore } from '@/shared/stores/remote-ingest.store'
+
+/** Active remote hook phase when using ingest (JPEG or WebRTC); null for local camera. */
+export type RemoteIngestConnectionPhase = RemoteIngestViewerPhase | RemoteIngestWebRtcPhase
 
 export type CameraFeedMode = 'local' | 'remote'
 
@@ -22,6 +25,8 @@ export type UseCameraFeedResult = {
   error: string | null
   cameraLabel: string | null
   remoteStatusHint: string | null
+  /** JPEG/WebRTC connection phase; null when `mode === 'local'`. */
+  remotePhase: RemoteIngestConnectionPhase | null
   start: () => Promise<void>
   stop: () => void
   captureFrame: () => ArrayBuffer | null
@@ -171,6 +176,12 @@ export function useCameraFeed(): UseCameraFeedResult {
     return null
   }, [useRemote, webrtcVideoPreferred, webrtcRemote.phase, jpegRemote.phase])
 
+  const remotePhase: RemoteIngestConnectionPhase | null = useRemote
+    ? webrtcVideoPreferred
+      ? webrtcRemote.phase
+      : jpegRemote.phase
+    : null
+
   return {
     mode,
     preferLocalOverride,
@@ -182,6 +193,7 @@ export function useCameraFeed(): UseCameraFeedResult {
     error,
     cameraLabel,
     remoteStatusHint,
+    remotePhase,
     start,
     stop,
     captureFrame,

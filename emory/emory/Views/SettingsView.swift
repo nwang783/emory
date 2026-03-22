@@ -34,10 +34,12 @@ struct SettingsView: View {
                         Text("Desktop URL")
                             .font(.system(size: settings.fontSize.bodySize, weight: .medium))
                             .foregroundStyle(EmoryTheme.textPrimary)
-                        Text("Enter the desktop server URL, for example `http://100.x.y.z:18763`.")
+                        Text(
+                            "Important: use http:// not https:// — the desktop has no TLS on this port; https will show a TLS error. Same Wi‑Fi LAN works without Tailscale. Example: http://10.0.0.237:18763 (port 18763). Tailscale is optional (http://100.x.y.z:18763). Do not use ws:// here."
+                        )
                             .font(.system(size: settings.fontSize.captionSize))
                             .foregroundStyle(EmoryTheme.textSecondary)
-                        TextField("http://100.x.y.z:18763", text: $settings.backendURL)
+                        TextField("http://10.0.0.237:18763", text: $settings.backendURL)
                             .font(.system(size: settings.fontSize.captionSize))
                             .padding(12)
                             .background(Color(.systemGray6))

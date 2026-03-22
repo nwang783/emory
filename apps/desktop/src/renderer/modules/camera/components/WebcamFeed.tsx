@@ -114,6 +114,7 @@ export function WebcamFeed(): React.JSX.Element {
     error,
     cameraLabel,
     remoteStatusHint,
+    remotePhase,
     start,
     stop,
     captureFrame,

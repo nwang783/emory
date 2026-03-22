@@ -43,7 +43,7 @@ export const useRemoteIngestStore = create<RemoteIngestState>((set) => ({
   listening: false,
   effectiveHost: null,
   signalingPort: 18763,
-  webrtcVideoPreferred: true,
+  webrtcVideoPreferred: false,
   lastError: null,
   instanceId: '',
 
